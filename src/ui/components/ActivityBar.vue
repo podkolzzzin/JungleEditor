@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { sidebarOpen } from '../store'
+import { computed } from 'vue'
+import { sidebarOpen, backgroundTasks } from '../store'
 
 defineProps<{ active: string }>()
 defineEmits<{ (e: 'select', id: string): void }>()
+
+const runningTaskCount = computed(() =>
+  backgroundTasks.filter(t => t.status === 'running').length,
+)
 </script>
 
 <template>
@@ -18,6 +23,19 @@ defineEmits<{ (e: 'select', id: string): void }>()
         <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
           <path d="M17.5 0H8.12L7 1.12v3.38H4.5A1.5 1.5 0 003 6v16.5A1.5 1.5 0 004.5 24h11a1.5 1.5 0 001.5-1.5V20h2.5a1.5 1.5 0 001.5-1.5v-15L17.5 0zM16 22.5H4.5V6H7v12.5A1.5 1.5 0 008.5 20H16v2.5zM19.5 18.5H8.5V1.62L17.38 1l2.12 2.62V18.5z"/>
         </svg>
+      </button>
+
+      <!-- Tasks icon -->
+      <button
+        class="ab-btn"
+        :class="{ active: active === 'tasks' && sidebarOpen }"
+        @click="$emit('select', 'tasks')"
+        title="Background Tasks"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+        <span v-if="runningTaskCount > 0" class="badge">{{ runningTaskCount }}</span>
       </button>
     </div>
 
@@ -72,5 +90,25 @@ defineEmits<{ (e: 'select', id: string): void }>()
   opacity: 1;
   border-left-color: var(--activitybar-active-border);
   color: var(--activitybar-active-fg);
+}
+.ab-btn {
+  position: relative;
+}
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
 }
 </style>

@@ -5,6 +5,7 @@ import type { FileNode } from '../core/types'
 import type { PendingImport } from './store'
 import ActivityBar from './components/ActivityBar.vue'
 import FileTree from './components/FileTree.vue'
+import BackgroundTasks from './components/BackgroundTasks.vue'
 import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
 import ResizeHandle from './components/ResizeHandle.vue'
@@ -84,7 +85,12 @@ onMounted(() => {
       <ActivityBar :active="activePanel" @select="onActivitySelect" />
 
       <div class="sidebar" v-show="sidebarOpen" :style="{ width: sidebarWidth + 'px' }">
+<<<<<<< copilot/add-video-rendering-export-pipeline
+        <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" />
+        <BackgroundTasks v-else-if="activePanel === 'tasks'" />
+=======
         <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" @pending-import="onPendingImport" />
+>>>>>>> main
       </div>
 
       <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />

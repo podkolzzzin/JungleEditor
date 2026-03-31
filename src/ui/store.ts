@@ -4,8 +4,8 @@
  */
 
 import { reactive, ref } from 'vue'
-import type { FileNode, SourceMetadata, TimelineDocument } from '../core/types'
-import { isTimelineNode as _isTimelineNode, findNodeById } from '../core/types'
+import type { FileNode, SourceMetadata, TimelineDocument, BackgroundTask, RenderDocument } from '../core/types'
+import { isTimelineNode as _isTimelineNode, isRenderNode as _isRenderNode, findNodeById } from '../core/types'
 import {
   saveFileHandle,
   loadAllFileHandles,
@@ -23,16 +23,19 @@ import {
   writeTimelineFile,
   readTimelineFile,
   deleteTimelineFile,
+  writeRenderFile,
+  readRenderFile,
+  deleteRenderFile,
 } from './project'
 
 // ── Tab / pane types ──
 
-/** A single open file tab (may be timeline or video). */
+/** A single open file tab (may be timeline, video, or render). */
 export interface OpenTab {
   id: string
   fileNodeId: string
   title: string
-  fileType: 'timeline' | 'video'
+  fileType: 'timeline' | 'video' | 'render'
   timelineDoc: TimelineDocument | null
   dirty: boolean
 }
@@ -71,6 +74,11 @@ export const loading = ref(true)
 export const hasProject = ref(false)
 export const fileCount = ref(0)
 export const unlinkedCount = ref(0)
+
+// ── Background tasks & render state ──
+
+export const backgroundTasks = reactive<BackgroundTask[]>([])
+export const activeRender = ref<RenderDocument | null>(null)
 
 // ── Tab / pane state ──
 
@@ -166,11 +174,12 @@ export async function openFileInTab(node: FileNode, targetPaneId?: string): Prom
   // Create a new tab
   const tabId = `tab-${crypto.randomUUID().slice(0, 8)}`
   const isTimeline = isTimelineNode(node)
+  const isRender = isRenderNode(node)
   const tab: OpenTab = {
     id: tabId,
     fileNodeId: node.id,
     title: node.name,
-    fileType: isTimeline ? 'timeline' : 'video',
+    fileType: isTimeline ? 'timeline' : isRender ? 'render' : 'video',
     timelineDoc: null,
     dirty: false,
   }
@@ -182,7 +191,13 @@ export async function openFileInTab(node: FileNode, targetPaneId?: string): Prom
       console.error(`Failed to load timeline "${node.name}":`, e)
       // Tab is created with null timelineDoc; TimelineEditor shows nothing
     }
-  } else if (!isTimeline && !node.url && node.handle) {
+  } else if (isRender && projectHandle.value && node.sourceId) {
+    try {
+      activeRender.value = await readRenderFile(projectHandle.value, node.sourceId)
+    } catch (e) {
+      console.error(`Failed to load render profile "${node.name}":`, e)
+    }
+  } else if (!isTimeline && !isRender && !node.url && node.handle) {
     await resolveFileUrl(node)
   }
 
@@ -348,6 +363,26 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
   if (tab) tab.dirty = dirty
 }
 
+// ── Background task management ──
+
+export function addTask(task: BackgroundTask): void {
+  backgroundTasks.push(task)
+}
+
+export function updateTask(id: string, updates: Partial<BackgroundTask>): void {
+  const task = backgroundTasks.find(t => t.id === id)
+  if (task) Object.assign(task, updates)
+}
+
+export function removeTask(id: string): void {
+  const idx = backgroundTasks.findIndex(t => t.id === id)
+  if (idx !== -1) backgroundTasks.splice(idx, 1)
+}
+
+export function getTask(id: string): BackgroundTask | undefined {
+  return backgroundTasks.find(t => t.id === id)
+}
+
 
 
 // ── Initialization ──
@@ -415,12 +450,12 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   console.log('sources directory ready')
 
   // Read sources/ metadata and in-memory handle cache
-  const { sources, folders, timelines } = await readAllSources(sd, handle)
+  const { sources, folders, timelines, renders } = await readAllSources(sd, handle)
   const handleMap = loadAllFileHandles()
-  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${timelines.length} timeline(s), ${handleMap.size} cached handle(s)`)
+  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${timelines.length} timeline(s), ${renders.length} render(s), ${handleMap.size} cached handle(s)`)
 
   // Build tree
-  const tree = buildTreeFromSources(sources, folders, handleMap, timelines)
+  const tree = buildTreeFromSources(sources, folders, handleMap, timelines, renders)
   fileTree.splice(0, fileTree.length, ...tree)
   fileCount.value = sources.length
 
@@ -457,6 +492,10 @@ export async function closeProject(): Promise<void> {
   hasProject.value = false
   fileCount.value = 0
   unlinkedCount.value = 0
+
+  // Clear background tasks and render state
+  backgroundTasks.splice(0, backgroundTasks.length)
+  activeRender.value = null
 
   // Clear tab system
   openTabs.clear()
@@ -695,6 +734,14 @@ async function cleanupNode(node: FileNode): Promise<void> {
       if (activeFile.value?.id === node.id) {
         activeTimeline.value = null
       }
+    } else if (isRenderNode(node)) {
+      // Render file: delete .render from project root
+      if (node.sourceId && projectHandle.value) {
+        await deleteRenderFile(projectHandle.value, node.sourceId).catch(() => {})
+      }
+      if (activeFile.value?.id === node.id) {
+        activeRender.value = null
+      }
     } else {
       if (node.url) URL.revokeObjectURL(node.url)
       if (node.sourceId && sourcesDir.value) {
@@ -809,10 +856,78 @@ export function toggleFolder(node: FileNode): void {
   }
 }
 
+// ── Render profile operations ──
+
+/**
+ * Create a new .render profile for a timeline.
+ */
+export async function createRenderProfile(
+  timelineNode: FileNode,
+  profileName: string,
+): Promise<void> {
+  if (!projectHandle.value) return
+  if (!isTimelineNode(timelineNode)) return
+
+  const renderId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const doc: RenderDocument = {
+    name: profileName,
+    timelineId: timelineNode.sourceId || timelineNode.id,
+    timelineName: timelineNode.name.replace('.timeline', ''),
+    profile: {
+      name: profileName,
+      container: 'mp4',
+      videoCodec: 'avc1.640028',
+      resolution: { width: 1920, height: 1080, label: '1080p' },
+      fps: 30,
+      qualityPreset: 'medium',
+      includeAudio: true,
+      audioBitrate: 192_000,
+    },
+    created: now,
+    modified: now,
+  }
+
+  await writeRenderFile(projectHandle.value, renderId, doc)
+
+  const node: FileNode = {
+    id: renderId,
+    name: `${profileName}.render`,
+    type: 'file',
+    sourceId: renderId,
+    path: '',
+    mimeType: 'application/x-render',
+    added: now,
+    permissionState: 'granted',
+  }
+  fileTree.push(node)
+
+  await openFileInTab(node)
+}
+
+/**
+ * Save the currently active render profile back to disk.
+ */
+export async function saveRenderProfile(): Promise<void> {
+  if (!projectHandle.value || !activeFile.value || !activeRender.value) return
+  if (!isRenderNode(activeFile.value)) return
+
+  const renderId = activeFile.value.sourceId
+  if (!renderId) return
+
+  await writeRenderFile(projectHandle.value, renderId, activeRender.value)
+  console.log(`Render profile "${activeRender.value.name}" saved.`)
+}
+
 // ── File selection & permission resolution ──
 
 export function isTimelineNode(node: FileNode): boolean {
   return _isTimelineNode(node)
+}
+
+export function isRenderNode(node: FileNode): boolean {
+  return _isRenderNode(node)
 }
 
 /** Open a file in a tab (replaces the old single-file selectFile). */
@@ -944,11 +1059,11 @@ async function resolveMediaFiles(
 
 // ── Re-link helpers ──
 
-/** Count file nodes in tree that have no handle (excludes timeline nodes, which never need handles) */
+/** Count file nodes in tree that have no handle (excludes timeline and render nodes, which never need handles) */
 function countUnlinked(nodes: FileNode[]): number {
   let count = 0
   for (const n of nodes) {
-    if (n.type === 'file' && !_isTimelineNode(n) && !n.handle) count++
+    if (n.type === 'file' && !_isTimelineNode(n) && !_isRenderNode(n) && !n.handle) count++
     if (n.children) count += countUnlinked(n.children)
   }
   return count

@@ -11,6 +11,7 @@ import {
 import EditorTabBar from './EditorTabBar.vue'
 import TimelineEditor from './timeline/TimelineEditor.vue'
 import VideoPreview from './VideoPreview.vue'
+import RenderEditor from './render/RenderEditor.vue'
 
 const props = defineProps<{
   pane: LeafPane
@@ -77,6 +78,11 @@ function onDropZoneDrop(e: DragEvent, zone: 'left' | 'right' | 'top' | 'bottom' 
       <TimelineEditor
         v-if="activeTab?.fileType === 'timeline'"
         :pane-id="pane.id"
+      />
+
+      <!-- Render editor -->
+      <RenderEditor
+        v-else-if="activeTab?.fileType === 'render'"
       />
 
       <!-- Video preview -->
