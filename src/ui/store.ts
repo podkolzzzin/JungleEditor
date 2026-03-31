@@ -469,7 +469,7 @@ function findFolderByPath(path: string, list: FileNode[] = fileTree): FileNode |
 function countUnlinked(nodes: FileNode[]): number {
   let count = 0
   for (const n of nodes) {
-    if (n.type === 'file' && !n.handle) count++
+    if (n.type === 'file' && !n.handle && !_isTimelineNode(n)) count++
     if (n.children) count += countUnlinked(n.children)
   }
   return count
