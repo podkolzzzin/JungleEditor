@@ -49,8 +49,10 @@ async function extractWaveform(sourceId: string): Promise<Float32Array | null> {
     const response = await fetch(node.url)
     const arrayBuffer = await response.arrayBuffer()
 
-    const audioCtx = new OfflineAudioContext(1, 44100, 44100)
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
+    // Use a temporary AudioContext just for decoding — duration-agnostic
+    const tempCtx = new AudioContext()
+    const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer)
+    await tempCtx.close()
 
     const rawData = audioBuffer.getChannelData(0)
     // Downsample to ~200 samples per second (enough for visual display)
@@ -134,10 +136,14 @@ async function renderAllWaveforms() {
   }
 }
 
+// Compute a fingerprint of clip properties that affect waveform rendering
+function waveformFingerprint() {
+  return props.clips.map(c => `${c.sourceId}:${c.in}:${c.out}:${c.offset}`).join('|')
+}
+
 watch(
-  () => [props.clips, props.pixelsPerSecond, props.volume],
+  () => [waveformFingerprint(), props.pixelsPerSecond, props.volume],
   () => { renderAllWaveforms() },
-  { deep: true },
 )
 
 onMounted(() => {

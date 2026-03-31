@@ -408,17 +408,14 @@ test.describe('JungleEditor E2E', () => {
 
     // ── Change volume to 50% ──
     await volumeSlider.fill('0.5')
-    await page.waitForTimeout(300)
     await expect(volumeLabel).toHaveText('50%')
 
     // ── Set volume to 0 (mute) ──
     await volumeSlider.fill('0')
-    await page.waitForTimeout(200)
     await expect(volumeLabel).toHaveText('0%')
 
     // ── Restore volume to 80% ──
     await volumeSlider.fill('0.8')
-    await page.waitForTimeout(200)
     await expect(volumeLabel).toHaveText('80%')
 
     // ── Verify volume control label area ──
