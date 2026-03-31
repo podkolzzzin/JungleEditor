@@ -6,7 +6,7 @@
  * This file only handles the browser FS I/O layer.
  */
 
-import type { SourceMetadata, TimelineDocument, TimelineSourceMeta, FolderMeta } from '../core/types'
+import type { SourceMetadata, TimelineDocument, TimelineSourceMeta, FolderMeta, ProjectFile } from '../core/types'
 import { serializeSource, parseSource, serializeFolder, parseFolder } from '../core/project/source-format'
 import { serializeTimeline, parseTimeline } from '../core/project/timeline-format'
 
@@ -144,6 +144,9 @@ export async function deleteTimelineFile(
 
 // ── Read all sources ──
 
+/** Directories to skip when scanning the project for files */
+const SKIP_DIRS = new Set(['sources', 'node_modules', '.git'])
+
 export async function readAllSources(
   sourcesDir: FileSystemDirectoryHandle,
   projectDir: FileSystemDirectoryHandle,
@@ -151,10 +154,12 @@ export async function readAllSources(
   sources: SourceMetadata[]
   folders: FolderMeta[]
   timelines: TimelineSourceMeta[]
+  projectFiles: ProjectFile[]
 }> {
   const sources: SourceMetadata[] = []
   const folders: FolderMeta[] = []
   const timelines: TimelineSourceMeta[] = []
+  const projectFiles: ProjectFile[] = []
 
   // Read .source and .folder files from sources/ directory
   for await (const entry of sourcesDir.values()) {
@@ -177,6 +182,9 @@ export async function readAllSources(
     }
   }
 
+  // Collect names of files already tracked by .source metadata for deduplication
+  const trackedNames = new Set(sources.map((s) => s.name))
+
   // Read .timeline files from project root directory
   for await (const entry of projectDir.values()) {
     if (entry.kind !== 'file') continue
@@ -196,5 +204,38 @@ export async function readAllSources(
     }
   }
 
-  return { sources, folders, timelines }
+  // Scan the project directory recursively for actual media/video files
+  // that are not tracked by .source metadata
+  async function scanDir(dir: FileSystemDirectoryHandle, relativePath: string): Promise<void> {
+    for await (const entry of dir.values()) {
+      if (entry.kind === 'directory') {
+        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
+        const childDir = await dir.getDirectoryHandle(entry.name)
+        const childPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+        await scanDir(childDir, childPath)
+      } else if (entry.kind === 'file') {
+        // Skip timeline files (already handled above) and hidden files
+        if (entry.name.endsWith('.timeline') || entry.name.startsWith('.')) continue
+        // Skip files already tracked by .source metadata
+        if (trackedNames.has(entry.name)) continue
+
+        const fileHandle = entry as FileSystemFileHandle
+        const file = await fileHandle.getFile()
+        // Use relative path + filename as stable ID
+        const fullRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+        projectFiles.push({
+          id: `project:${fullRelPath}`,
+          name: entry.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          path: relativePath,
+          handle: fileHandle,
+        })
+      }
+    }
+  }
+
+  await scanDir(projectDir, '')
+
+  return { sources, folders, timelines, projectFiles }
 }

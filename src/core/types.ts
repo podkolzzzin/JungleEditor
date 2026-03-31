@@ -70,6 +70,22 @@ export interface FolderMeta {
   path: string
 }
 
+/** A file discovered by scanning the project directory (not tracked via .source) */
+export interface ProjectFile {
+  /** Stable ID derived from relative path within the project */
+  id: string
+  /** Filename */
+  name: string
+  /** File size in bytes */
+  size: number
+  /** MIME type */
+  type: string
+  /** Relative folder path within the project (e.g. "media") */
+  path: string
+  /** Platform file handle for reading the file */
+  handle: unknown
+}
+
 // ── Timeline types ──
 
 /** A single clip referencing a video source with in/out points */

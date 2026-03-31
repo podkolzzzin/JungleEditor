@@ -76,26 +76,8 @@ test.describe('Full Workflow', () => {
     await expect(trackInputs).toHaveCount(2)
 
     // ── 9. Add a clip to the timeline via reactive state injection ──
-    const sourceId = await page.evaluate(async () => {
-      const mock = (window as any).__fsMock
-      const root = mock.projectRoot
-      const sourcesDir = root.children.get('sources')
-      if (!sourcesDir) return null
-
-      for (const [name, child] of sourcesDir.children) {
-        if (name.endsWith('.source') && child.kind === 'file') {
-          const text = new TextDecoder().decode(child.data)
-          const idMatch = text.match(/^id=(.+)$/m)
-          const nameMatch = text.match(/^name=(.+)$/m)
-          if (idMatch && nameMatch && nameMatch[1] === 'test-video.mp4') {
-            return idMatch[1]
-          }
-        }
-      }
-      return null
-    })
-
-    expect(sourceId).toBeTruthy()
+    // For copy mode, sourceId is project-relative path (no .source file)
+    const sourceId = 'project:media/test-video.mp4'
 
     await page.evaluate(
       (sid) => {

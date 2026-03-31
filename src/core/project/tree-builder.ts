@@ -3,10 +3,10 @@
  * No browser, filesystem, or UI dependencies.
  */
 
-import type { FileNode, SourceMetadata, TimelineSourceMeta, FolderMeta } from '../types'
+import type { FileNode, SourceMetadata, TimelineSourceMeta, FolderMeta, ProjectFile } from '../types'
 
 /**
- * Build a hierarchical FileNode tree from flat lists of sources, folders, and timelines.
+ * Build a hierarchical FileNode tree from flat lists of sources, folders, timelines, and project files.
  * The handleMap provides platform-specific file handles (keyed by sourceId).
  */
 export function buildTreeFromSources(
@@ -14,6 +14,7 @@ export function buildTreeFromSources(
   folders: FolderMeta[],
   handleMap: Map<string, unknown>,
   timelines: TimelineSourceMeta[] = [],
+  projectFiles: ProjectFile[] = [],
 ): FileNode[] {
   const root: FileNode[] = []
 
@@ -110,6 +111,23 @@ export function buildTreeFromSources(
       permissionState: 'granted',
     }
     parent.push(timelineNode)
+  }
+
+  // Place project-local files (discovered by scanning, not tracked via .source)
+  for (const pf of projectFiles) {
+    const parent = ensureFolderPath(pf.path)
+    const fileNode: FileNode = {
+      id: pf.id,
+      name: pf.name,
+      type: 'file',
+      sourceId: pf.id,
+      handle: pf.handle,
+      size: pf.size,
+      mimeType: pf.type,
+      path: pf.path,
+      permissionState: 'granted',
+    }
+    parent.push(fileNode)
   }
 
   // Sort: folders first, then files, alphabetically

@@ -414,19 +414,22 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   sourcesDir.value = sd
   console.log('sources directory ready')
 
-  // Read sources/ metadata and in-memory handle cache
-  const { sources, folders, timelines } = await readAllSources(sd, handle)
+  // Read sources/ metadata, project files, and in-memory handle cache
+  const { sources, folders, timelines, projectFiles } = await readAllSources(sd, handle)
   const handleMap = loadAllFileHandles()
-  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${timelines.length} timeline(s), ${handleMap.size} cached handle(s)`)
+  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${timelines.length} timeline(s), ${projectFiles.length} project file(s), ${handleMap.size} cached handle(s)`)
 
   // Build tree
-  const tree = buildTreeFromSources(sources, folders, handleMap, timelines)
+  const tree = buildTreeFromSources(sources, folders, handleMap, timelines, projectFiles)
   fileTree.splice(0, fileTree.length, ...tree)
-  fileCount.value = sources.length
+  fileCount.value = sources.length + projectFiles.length
 
   // Auto-resolve files that live inside the project's media/ folder.
   // These don't need re-linking because the project directory already has permission.
   await resolveMediaFiles(handle, tree)
+
+  // Resolve blob URLs for project-local files (discovered by scanning, already have handles)
+  await resolveProjectFileUrls(tree)
 
   // Count how many files have no handle (need re-linking after reload)
   unlinkedCount.value = countUnlinked(tree)
@@ -565,7 +568,6 @@ export async function importPickedFiles(
   for (let i = 0; i < pending.handles.length; i++) {
     const handle = pending.handles[i]
     const file = await handle.getFile()
-    const sourceId = crypto.randomUUID()
 
     onProgress?.({ current: i + 1, total, fileName: file.name })
     // Yield to the browser so the UI can repaint before the heavy I/O
@@ -603,25 +605,35 @@ export async function importPickedFiles(
       }
     }
 
-    // Write .source metadata
-    const meta: SourceMetadata = {
-      id: sourceId,
-      name: file.name,
-      size: file.size,
-      type: file.type || 'video/mp4',
-      added: new Date().toISOString(),
-      path: targetPath,
-    }
-    try {
-      await writeSourceFile(sourcesDir.value!, meta)
-      console.log(`Written .source file for "${file.name}" (${sourceId})`)
-    } catch (e) {
-      console.error(`Failed to write .source file for "${file.name}":`, e)
-      continue
-    }
+    // For linked files, use UUID-based .source metadata
+    // For copy/move files, use path-based ID (no .source file needed)
+    let sourceId: string
+    const mimeType = file.type || 'video/mp4'
+    const added = new Date().toISOString()
 
-    // Cache handle in memory for this session
-    saveFileHandle(sourceId, finalHandle)
+    if (mode === 'link') {
+      sourceId = crypto.randomUUID()
+      const meta: SourceMetadata = {
+        id: sourceId,
+        name: file.name,
+        size: file.size,
+        type: mimeType,
+        added,
+        path: targetPath,
+      }
+      try {
+        await writeSourceFile(sourcesDir.value!, meta)
+        console.log(`Written .source file for "${file.name}" (${sourceId})`)
+      } catch (e) {
+        console.error(`Failed to write .source file for "${file.name}":`, e)
+        continue
+      }
+      // Cache handle in memory for this session (linked files need re-linking on reload)
+      saveFileHandle(sourceId, finalHandle)
+    } else {
+      // For copy/move: use project-relative path as stable ID (no .source file)
+      sourceId = `project:media/${file.name}`
+    }
 
     // Create blob URL from the (possibly copied) file
     const finalFile = await finalHandle.getFile()
@@ -636,9 +648,9 @@ export async function importPickedFiles(
       handle: finalHandle,
       url,
       size: finalFile.size,
-      mimeType: meta.type,
-      added: meta.added,
-      path: targetPath,
+      mimeType,
+      added,
+      path: mode === 'link' ? targetPath : 'media',
       permissionState: 'granted',
     }
     targetChildren.push(fileNode)
@@ -696,11 +708,12 @@ async function cleanupNode(node: FileNode): Promise<void> {
       }
     } else {
       if (node.url) URL.revokeObjectURL(node.url)
-      if (node.sourceId && sourcesDir.value) {
+      // Only delete .source file for linked files (not project-local files)
+      if (node.sourceId && sourcesDir.value && !node.sourceId.startsWith('project:')) {
         await deleteSourceFile(sourcesDir.value, node.sourceId).catch(() => {})
         removeFileHandle(node.sourceId)
-        fileCount.value = Math.max(0, fileCount.value - 1)
       }
+      fileCount.value = Math.max(0, fileCount.value - 1)
     }
   } else if (node.type === 'folder') {
     // Remove folder marker
@@ -938,6 +951,27 @@ async function resolveMediaFiles(
 
   if (resolved > 0) {
     console.log(`Auto-resolved ${resolved} file(s) from project media/ folder`)
+  }
+}
+
+/**
+ * Resolve blob URLs for project-local files that have handles but no URL yet.
+ * These are files discovered by scanning the project directory.
+ */
+async function resolveProjectFileUrls(tree: FileNode[]): Promise<void> {
+  const needsUrl = collectFileNodes(tree).filter(
+    (n) => n.handle && !n.url && !_isTimelineNode(n),
+  )
+
+  for (const node of needsUrl) {
+    try {
+      const handle = node.handle as FileSystemFileHandle
+      const file = await handle.getFile()
+      node.url = URL.createObjectURL(file)
+      node.permissionState = 'granted'
+    } catch (e) {
+      console.warn(`Failed to resolve URL for project file "${node.name}":`, e)
+    }
   }
 }
 
