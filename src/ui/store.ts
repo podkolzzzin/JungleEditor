@@ -25,6 +25,39 @@ import {
   deleteTimelineFile,
 } from './project'
 
+// ── Tab / pane types ──
+
+/** A single open file tab (may be timeline or video). */
+export interface OpenTab {
+  id: string
+  fileNodeId: string
+  title: string
+  fileType: 'timeline' | 'video'
+  timelineDoc: TimelineDocument | null
+  dirty: boolean
+}
+
+/** A leaf pane holds an ordered list of tabs with one active. */
+export interface LeafPane {
+  type: 'leaf'
+  id: string
+  tabIds: string[]
+  activeTabId: string | null
+}
+
+/** A split pane contains two child pane nodes arranged horizontally or vertically. */
+export interface SplitPane {
+  type: 'split'
+  id: string
+  direction: 'horizontal' | 'vertical'
+  /** Fraction of total space given to `first` child (0.1 – 0.9). */
+  ratio: number
+  first: PaneLayout
+  second: PaneLayout
+}
+
+export type PaneLayout = LeafPane | SplitPane
+
 // ── Reactive state ──
 
 export const fileTree = reactive<FileNode[]>([])
@@ -38,6 +71,282 @@ export const loading = ref(true)
 export const hasProject = ref(false)
 export const fileCount = ref(0)
 export const unlinkedCount = ref(0)
+
+// ── Tab / pane state ──
+
+export const openTabs = reactive<Map<string, OpenTab>>(new Map())
+
+function makeLeafPane(id: string): LeafPane {
+  return { type: 'leaf', id, tabIds: [], activeTabId: null }
+}
+
+export const paneLayout = ref<PaneLayout>(makeLeafPane('pane-main'))
+export const focusedPaneId = ref<string>('pane-main')
+
+/** Set while a tab is being dragged — used to show split drop zones. */
+export const tabDragState = ref<{ tabId: string; fromPaneId: string } | null>(null)
+
+// ── Pane tree helpers ──
+
+export function findPaneById(layout: PaneLayout, id: string): PaneLayout | null {
+  if (layout.id === id) return layout
+  if (layout.type === 'split') {
+    return findPaneById(layout.first, id) ?? findPaneById(layout.second, id)
+  }
+  return null
+}
+
+function findParentSplit(layout: PaneLayout, id: string): SplitPane | null {
+  if (layout.type !== 'split') return null
+  if (layout.first.id === id || layout.second.id === id) return layout
+  return findParentSplit(layout.first, id) ?? findParentSplit(layout.second, id)
+}
+
+export function getAllLeafPanes(layout: PaneLayout): LeafPane[] {
+  if (layout.type === 'leaf') return [layout]
+  return [...getAllLeafPanes(layout.first), ...getAllLeafPanes(layout.second)]
+}
+
+function findLeafPaneWithTab(layout: PaneLayout, tabId: string): LeafPane | null {
+  if (layout.type === 'leaf') return layout.tabIds.includes(tabId) ? layout : null
+  return findLeafPaneWithTab(layout.first, tabId) ?? findLeafPaneWithTab(layout.second, tabId)
+}
+
+function replacePaneInLayout(layout: PaneLayout, targetId: string, replacement: PaneLayout): boolean {
+  if (layout.type !== 'split') return false
+  if (layout.first.id === targetId) { layout.first = replacement; return true }
+  if (layout.second.id === targetId) { layout.second = replacement; return true }
+  return replacePaneInLayout(layout.first, targetId, replacement) ||
+    replacePaneInLayout(layout.second, targetId, replacement)
+}
+
+export function getActivePaneTab(paneId: string): OpenTab | null {
+  const pane = findPaneById(paneLayout.value, paneId)
+  if (!pane || pane.type !== 'leaf' || !pane.activeTabId) return null
+  return openTabs.get(pane.activeTabId) ?? null
+}
+
+/** Sync legacy activeFile / activeTimeline to the focused pane's active tab. */
+function syncActiveRefs(): void {
+  const tab = getActivePaneTab(focusedPaneId.value)
+  if (!tab) {
+    activeFile.value = null
+    activeTimeline.value = null
+    return
+  }
+  const node = findNode(tab.fileNodeId)
+  activeFile.value = node
+  activeTimeline.value = tab.timelineDoc
+}
+
+// ── Tab management ──
+
+/**
+ * Open a file in a new tab (or activate an existing one).
+ * This is the primary entry point replacing the old selectFile().
+ */
+export async function openFileInTab(node: FileNode, targetPaneId?: string): Promise<void> {
+  if (node.type !== 'file') return
+
+  const paneId = targetPaneId ?? focusedPaneId.value
+
+  // If already open anywhere, activate that tab
+  for (const [tabId, tab] of openTabs) {
+    if (tab.fileNodeId === node.id) {
+      const pane = findLeafPaneWithTab(paneLayout.value, tabId)
+      if (pane) {
+        pane.activeTabId = tabId
+        focusedPaneId.value = pane.id
+        syncActiveRefs()
+        return
+      }
+    }
+  }
+
+  // Create a new tab
+  const tabId = `tab-${crypto.randomUUID().slice(0, 8)}`
+  const isTimeline = isTimelineNode(node)
+  const tab: OpenTab = {
+    id: tabId,
+    fileNodeId: node.id,
+    title: node.name,
+    fileType: isTimeline ? 'timeline' : 'video',
+    timelineDoc: null,
+    dirty: false,
+  }
+
+  if (isTimeline && projectHandle.value && node.sourceId) {
+    try {
+      tab.timelineDoc = await readTimelineFile(projectHandle.value, node.sourceId)
+    } catch (e) {
+      console.error(`Failed to load timeline "${node.name}":`, e)
+      // Tab is created with null timelineDoc; TimelineEditor shows nothing
+    }
+  } else if (!isTimeline && !node.url && node.handle) {
+    await resolveFileUrl(node)
+  }
+
+  openTabs.set(tabId, tab)
+
+  // Add tab to target pane
+  const targetPane = findPaneById(paneLayout.value, paneId)
+  if (targetPane && targetPane.type === 'leaf') {
+    targetPane.tabIds.push(tabId)
+    targetPane.activeTabId = tabId
+    focusedPaneId.value = paneId
+  }
+
+  syncActiveRefs()
+}
+
+/** Activate (focus) a tab within a given pane. */
+export function activateTab(tabId: string, paneId: string): void {
+  const pane = findPaneById(paneLayout.value, paneId)
+  if (!pane || pane.type !== 'leaf' || !pane.tabIds.includes(tabId)) return
+  pane.activeTabId = tabId
+  focusedPaneId.value = paneId
+  syncActiveRefs()
+}
+
+/** Close a tab. Collapses the pane if it becomes empty (unless it's the last one). */
+export function closeTab(tabId: string): void {
+  const pane = findLeafPaneWithTab(paneLayout.value, tabId)
+  if (!pane) { openTabs.delete(tabId); return }
+
+  const idx = pane.tabIds.indexOf(tabId)
+  pane.tabIds.splice(idx, 1)
+  openTabs.delete(tabId)
+
+  if (pane.activeTabId === tabId) {
+    pane.activeTabId = pane.tabIds.length > 0
+      ? pane.tabIds[Math.min(idx, pane.tabIds.length - 1)]
+      : null
+  }
+
+  // Collapse the pane if empty and not the only pane
+  if (pane.tabIds.length === 0 && paneLayout.value.id !== pane.id) {
+    _closePaneIfEmpty(pane.id)
+  }
+
+  if (focusedPaneId.value === pane.id) syncActiveRefs()
+}
+
+function _closePaneIfEmpty(paneId: string): void {
+  const pane = findPaneById(paneLayout.value, paneId)
+  if (!pane || pane.type !== 'leaf' || pane.tabIds.length > 0) return
+  if (paneLayout.value.id === paneId) return
+
+  const parent = findParentSplit(paneLayout.value, paneId)
+  if (!parent) return
+
+  const sibling = parent.first.id === paneId ? parent.second : parent.first
+  if (paneLayout.value.id === parent.id) {
+    paneLayout.value = sibling
+  } else {
+    replacePaneInLayout(paneLayout.value, parent.id, sibling)
+  }
+
+  if (focusedPaneId.value === paneId) {
+    const leaves = getAllLeafPanes(paneLayout.value)
+    focusedPaneId.value = leaves[0]?.id ?? 'pane-main'
+    syncActiveRefs()
+  }
+}
+
+/** Reorder tabs within a pane via drag-and-drop. */
+export function reorderTabsInPane(paneId: string, fromIndex: number, toIndex: number): void {
+  const pane = findPaneById(paneLayout.value, paneId)
+  if (!pane || pane.type !== 'leaf') return
+  const [tab] = pane.tabIds.splice(fromIndex, 1)
+  pane.tabIds.splice(toIndex, 0, tab)
+}
+
+/** Move a tab from one pane to another (used by split drag-and-drop). */
+export function moveTabToPane(
+  tabId: string,
+  fromPaneId: string,
+  toPaneId: string,
+  toIndex?: number,
+): void {
+  if (fromPaneId === toPaneId) return
+  const fromPane = findPaneById(paneLayout.value, fromPaneId)
+  const toPane = findPaneById(paneLayout.value, toPaneId)
+  if (!fromPane || fromPane.type !== 'leaf' || !toPane || toPane.type !== 'leaf') return
+
+  const fromIdx = fromPane.tabIds.indexOf(tabId)
+  if (fromIdx === -1) return
+  fromPane.tabIds.splice(fromIdx, 1)
+  if (fromPane.activeTabId === tabId) {
+    fromPane.activeTabId = fromPane.tabIds[Math.min(fromIdx, fromPane.tabIds.length - 1)] ?? null
+  }
+
+  if (toIndex !== undefined && toIndex >= 0 && toIndex <= toPane.tabIds.length) {
+    toPane.tabIds.splice(toIndex, 0, tabId)
+  } else {
+    toPane.tabIds.push(tabId)
+  }
+  toPane.activeTabId = tabId
+  focusedPaneId.value = toPaneId
+
+  if (fromPane.tabIds.length === 0 && paneLayout.value.id !== fromPane.id) {
+    _closePaneIfEmpty(fromPane.id)
+  }
+  syncActiveRefs()
+}
+
+/**
+ * Split a pane: the given tab is moved into a new sibling pane.
+ * direction: 'horizontal' → left/right split; 'vertical' → top/bottom.
+ */
+export function splitPane(
+  paneId: string,
+  direction: 'horizontal' | 'vertical',
+  tabId: string,
+): void {
+  const pane = findPaneById(paneLayout.value, paneId)
+  if (!pane || pane.type !== 'leaf') return
+
+  const fromIdx = pane.tabIds.indexOf(tabId)
+  if (fromIdx !== -1) pane.tabIds.splice(fromIdx, 1)
+  if (pane.activeTabId === tabId) {
+    pane.activeTabId = pane.tabIds[Math.min(fromIdx, pane.tabIds.length - 1)] ?? null
+  }
+
+  const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`
+  const newPane: LeafPane = { type: 'leaf', id: newPaneId, tabIds: [tabId], activeTabId: tabId }
+
+  const split: SplitPane = {
+    type: 'split',
+    id: `split-${crypto.randomUUID().slice(0, 8)}`,
+    direction,
+    ratio: 0.5,
+    first: pane,
+    second: newPane,
+  }
+
+  if (paneLayout.value.id === paneId) {
+    paneLayout.value = split
+  } else {
+    replacePaneInLayout(paneLayout.value, paneId, split)
+  }
+
+  focusedPaneId.value = newPaneId
+  syncActiveRefs()
+}
+
+/** Update the split ratio for a split pane (called by the resize handle). */
+export function setSplitRatio(splitId: string, ratio: number): void {
+  const node = findPaneById(paneLayout.value, splitId)
+  if (node && node.type === 'split') {
+    node.ratio = Math.min(0.9, Math.max(0.1, ratio))
+  }
+}
+
+/** Mark a tab's dirty state (called by useTimeline when edits occur). */
+export function setTabDirty(tabId: string, dirty: boolean): void {
+  const tab = openTabs.get(tabId)
+  if (tab) tab.dirty = dirty
+}
 
 
 
@@ -118,6 +427,10 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   // Count how many files have no handle (need re-linking after reload)
   unlinkedCount.value = countUnlinked(tree)
 
+  // Reset tab state for fresh project
+  openTabs.clear()
+  paneLayout.value = makeLeafPane('pane-main')
+  focusedPaneId.value = 'pane-main'
   activeFile.value = null
   activeTimeline.value = null
   hasProject.value = true
@@ -140,6 +453,11 @@ export async function closeProject(): Promise<void> {
   hasProject.value = false
   fileCount.value = 0
   unlinkedCount.value = 0
+
+  // Clear tab system
+  openTabs.clear()
+  paneLayout.value = makeLeafPane('pane-main')
+  focusedPaneId.value = 'pane-main'
 
   clearHandleCache()
 }
@@ -242,6 +560,13 @@ export async function removeNode(nodeId: string, list: FileNode[] = fileTree): P
     const node = list[idx]
     await cleanupNode(node)
     list.splice(idx, 1)
+    // Close any open tab for this node
+    for (const [tabId, tab] of openTabs) {
+      if (tab.fileNodeId === nodeId) {
+        closeTab(tabId)
+        break
+      }
+    }
     if (activeFile.value?.id === nodeId) activeFile.value = null
     return true
   }
@@ -351,9 +676,8 @@ export async function createTimeline(name: string, parentFolder?: FileNode): Pro
   }
   targetChildren.push(node)
 
-  // Select the new timeline
-  activeFile.value = node
-  activeTimeline.value = doc
+  // Open the new timeline in a tab
+  await openFileInTab(node)
 }
 
 /**
@@ -382,31 +706,19 @@ export function isTimelineNode(node: FileNode): boolean {
   return _isTimelineNode(node)
 }
 
+/** Open a file in a tab (replaces the old single-file selectFile). */
 export async function selectFile(node: FileNode): Promise<void> {
-  if (node.type !== 'file') return
-  activeFile.value = node
+  await openFileInTab(node)
+}
 
-  // If it's a timeline file, load the timeline document
-  if (isTimelineNode(node)) {
-    if (projectHandle.value && node.sourceId) {
-      const doc = await readTimelineFile(projectHandle.value, node.sourceId)
-      activeTimeline.value = doc
-    }
-    return
-  }
-
-  // Clear timeline when switching to a video
-  activeTimeline.value = null
-
-  // If the file has no handle (e.g. after reload), prompt user to re-link it
-  if (!node.handle && !node.url) {
-    await relinkFile(node)
-    return
-  }
-
-  if (!node.url && node.handle) {
-    await resolveFileUrl(node)
-  }
+/**
+ * Save a specific timeline to disk by its source ID and document.
+ * This is the low-level save used by useTimeline.
+ */
+export async function saveTimelineById(sourceId: string, doc: TimelineDocument): Promise<void> {
+  if (!projectHandle.value) return
+  await writeTimelineFile(projectHandle.value, sourceId, doc)
+  console.log(`Timeline "${doc.name}" saved.`)
 }
 
 export async function resolveFileUrl(node: FileNode): Promise<string | null> {
