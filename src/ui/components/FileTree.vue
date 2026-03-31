@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { FileNode } from '../../core/types'
-import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
+import type { PendingImport } from '../store'
+import { fileTree, addVideoFiles, pickVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
 import FileTreeNode from './FileTreeNode.vue'
 
 const emit = defineEmits<{
   compress: [node: FileNode]
+  'pending-import': [pending: PendingImport]
 }>()
 
 const isDragging = ref(false)
@@ -86,8 +88,11 @@ function onDragLeave() {
   isDragging.value = false
 }
 
-function onAddFiles() {
-  addVideoFiles(getSelectedFolder())
+async function onAddFiles() {
+  const pending = await pickVideoFiles(getSelectedFolder())
+  if (pending) {
+    emit('pending-import', pending)
+  }
 }
 
 function onCreateFolder() {

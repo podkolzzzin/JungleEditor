@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test'
+import { Page, expect } from '@playwright/test'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,6 +35,18 @@ export async function enqueueDirectoryPicker(page: Page) {
   await page.evaluate(() => {
     ;(window as any).__fsMock.enqueueDirectoryPicker()
   })
+}
+
+/**
+ * Add a video file end-to-end: enqueue it in the mock, click "Add Video Files",
+ * then confirm the import-mode dialog by choosing Copy.
+ */
+export async function addVideoFile(page: Page, filename = 'test-video.mp4') {
+  await enqueueTestVideo(page, filename)
+  await page.locator('.panel-btn[title="Add Video Files"]').click()
+  // Import-mode dialog appears — click "Copy into project"
+  await page.locator('.option-copy').click()
+  await expect(page.locator('.tree-item .label', { hasText: filename })).toBeVisible({ timeout: 5000 })
 }
 
 /** Create a project by enqueuing a directory picker and clicking "Create Project". */

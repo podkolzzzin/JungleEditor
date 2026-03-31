@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { setupFSMock, enqueueTestVideo, createProject } from './helpers'
+import { setupFSMock, enqueueTestVideo, createProject, addVideoFile } from './helpers'
 
 test.describe('Waveform & Volume', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,11 +15,7 @@ test.describe('Waveform & Volume', () => {
     await expect(page.locator('.app-shell')).toBeVisible()
 
     // Add a video file
-    await enqueueTestVideo(page, 'test-video.mp4')
-    await page.locator('.panel-btn[title="Add Video Files"]').click()
-    await expect(page.locator('.tree-item .label', { hasText: 'test-video.mp4' })).toBeVisible({
-      timeout: 5000,
-    })
+    await addVideoFile(page, 'test-video.mp4')
 
     // Create a timeline
     await page.evaluate(() => {

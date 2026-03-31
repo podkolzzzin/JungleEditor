@@ -67,6 +67,8 @@ export interface ActiveClipInfo {
   speed: number
   /** Whether audio should be muted */
   muted: boolean
+  /** Track volume level (0–1) */
+  trackVolume: number
   /** Color grade parameters for this clip (optional — absent when no color_grade op) */
   colorGrade?: ColorGradeParams
 }
@@ -91,9 +93,10 @@ export function findActiveClip(
         const sourceTime = clip.in + localTime * speed
         const opacity = computeClipOpacity(clip, localTime)
         const muted = isClipMuted(clip)
+        const trackVolume = track.volume ?? 1
         const hasColorGrade = clip.operations?.some(op => op.type === 'color_grade') ?? false
         const colorGrade = hasColorGrade ? getClipColorGrade(clip) : undefined
-        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, colorGrade }
+        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, trackVolume, colorGrade }
       }
     }
   }

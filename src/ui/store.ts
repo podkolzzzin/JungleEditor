@@ -115,6 +115,10 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   fileTree.splice(0, fileTree.length, ...tree)
   fileCount.value = sources.length
 
+  // Auto-resolve files that live inside the project's media/ folder.
+  // These don't need re-linking because the project directory already has permission.
+  await resolveMediaFiles(handle, tree)
+
   // Count how many files have no handle (need re-linking after reload)
   unlinkedCount.value = countUnlinked(tree)
 
@@ -156,42 +160,132 @@ function revokeAllUrls(nodes: FileNode[]) {
 
 // ── File operations ──
 
-/**
- * Add video files using showOpenFilePicker (for persistent handles).
- * Files are added to the currently selected folder or root.
- */
-export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
-  if (!sourcesDir.value) {
-    console.error('addVideoFiles: sourcesDir is null — project not properly initialized')
-    return
-  }
+/** Pending import returned by pickVideoFiles() — consumed by importPickedFiles(). */
+export interface PendingImport {
+  handles: FileSystemFileHandle[]
+  fileNames: string[]
+  targetFolder?: FileNode
+}
 
+/** Progress info emitted during importPickedFiles(). */
+export interface ImportProgress {
+  current: number
+  total: number
+  fileName: string
+}
+
+/** Result returned by importPickedFiles(). */
+export interface ImportResult {
+  imported: number
+  /** File names where the original could not be deleted (move mode). */
+  deleteFailures: string[]
+}
+
+/** The MIME / extension filter reused across pickers. */
+const VIDEO_PICKER_TYPES = [
+  {
+    description: 'Video files',
+    accept: {
+      'video/*': ['.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.ogg'],
+    },
+  },
+]
+
+/**
+ * Phase 1 — Open the file picker and return the selected handles
+ * without importing anything yet. Returns `null` if the user cancels.
+ */
+export async function pickVideoFiles(targetFolder?: FileNode): Promise<PendingImport | null> {
   let handles: FileSystemFileHandle[]
   try {
     handles = await (window as any).showOpenFilePicker({
       multiple: true,
-      types: [
-        {
-          description: 'Video files',
-          accept: {
-            'video/*': ['.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.ogg'],
-          },
-        },
-      ],
+      types: VIDEO_PICKER_TYPES,
     })
   } catch (e: any) {
-    if (e.name === 'AbortError') return
+    if (e.name === 'AbortError') return null
     throw e
   }
+  if (!handles.length) return null
 
-  const targetPath = targetFolder?.path || ''
-  const targetChildren = targetFolder?.children ?? fileTree
+  const fileNames: string[] = []
+  for (const h of handles) {
+    const f = await h.getFile()
+    fileNames.push(f.name)
+  }
+  return { handles, fileNames, targetFolder }
+}
 
-  for (const handle of handles) {
+/**
+ * Phase 2 — Import the previously picked files using the chosen mode.
+ *   - **copy**: duplicate the file data into the project's `media/` folder
+ *   - **move**: copy into `media/`, then attempt to delete the original
+ *   - **link**: reference the file at its current location (current behaviour)
+ */
+export async function importPickedFiles(
+  pending: PendingImport,
+  mode: 'copy' | 'move' | 'link',
+  onProgress?: (p: ImportProgress) => void,
+): Promise<ImportResult> {
+  const result: ImportResult = { imported: 0, deleteFailures: [] }
+
+  if (!sourcesDir.value || !projectHandle.value) {
+    console.error('importPickedFiles: project not properly initialized')
+    return result
+  }
+
+  const targetPath = pending.targetFolder?.path || ''
+  const targetChildren = pending.targetFolder?.children ?? fileTree
+  const total = pending.handles.length
+
+  // Ensure the media/ directory exists when copying or moving
+  let mediaDir: FileSystemDirectoryHandle | undefined
+  if (mode === 'copy' || mode === 'move') {
+    mediaDir = await projectHandle.value.getDirectoryHandle('media', { create: true })
+  }
+
+  for (let i = 0; i < pending.handles.length; i++) {
+    const handle = pending.handles[i]
     const file = await handle.getFile()
     const sourceId = crypto.randomUUID()
 
-    // Write .source file
+    onProgress?.({ current: i + 1, total, fileName: file.name })
+    // Yield to the browser so the UI can repaint before the heavy I/O
+    await new Promise((r) => setTimeout(r, 0))
+
+    let finalHandle: FileSystemFileHandle = handle
+
+    if ((mode === 'copy' || mode === 'move') && mediaDir) {
+      try {
+        // Write file data into project media/ folder
+        const destHandle = await mediaDir.getFileHandle(file.name, { create: true })
+        const writable = await destHandle.createWritable()
+        // Stream the file contents (works for large video files)
+        await writable.write(await file.arrayBuffer())
+        await writable.close()
+        finalHandle = destHandle
+        console.log(`${mode === 'copy' ? 'Copied' : 'Moved'} "${file.name}" into project media/`)
+
+        // For move: try to delete the original.
+        // handle.remove() is non-standard (Chromium) and requires user activation,
+        // which we may not have at this point. Track failures to inform the user.
+        if (mode === 'move') {
+          try {
+            await (handle as any).remove()
+            console.log(`Deleted original "${file.name}"`)
+          } catch {
+            result.deleteFailures.push(file.name)
+            console.warn(`Could not delete original "${file.name}" — user must remove it manually`)
+          }
+        }
+      } catch (copyErr) {
+        console.error(`Failed to ${mode} "${file.name}" into project:`, copyErr)
+        // Fall back to linking so the file is still usable
+        finalHandle = handle
+      }
+    }
+
+    // Write .source metadata
     const meta: SourceMetadata = {
       id: sourceId,
       name: file.name,
@@ -209,10 +303,11 @@ export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
     }
 
     // Cache handle in memory for this session
-    saveFileHandle(sourceId, handle)
+    saveFileHandle(sourceId, finalHandle)
 
-    // Create blob URL
-    const url = URL.createObjectURL(file)
+    // Create blob URL from the (possibly copied) file
+    const finalFile = await finalHandle.getFile()
+    const url = URL.createObjectURL(finalFile)
 
     // Add to reactive tree
     const fileNode: FileNode = {
@@ -220,9 +315,9 @@ export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
       name: file.name,
       type: 'file',
       sourceId,
-      handle,
+      handle: finalHandle,
       url,
-      size: file.size,
+      size: finalFile.size,
       mimeType: meta.type,
       added: meta.added,
       path: targetPath,
@@ -230,7 +325,20 @@ export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
     }
     targetChildren.push(fileNode)
     fileCount.value++
+    result.imported++
   }
+
+  return result
+}
+
+/**
+ * Legacy shortcut: pick + immediately link (used by drag-drop where
+ * there is no opportunity to show a dialog).
+ */
+export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
+  const pending = await pickVideoFiles(targetFolder)
+  if (!pending) return
+  await importPickedFiles(pending, 'link')
 }
 
 /**
@@ -461,6 +569,63 @@ function findFolderByPath(path: string, list: FileNode[] = fileTree): FileNode |
     }
   }
   return undefined
+}
+
+// ── Auto-resolve project-local files ──
+
+/**
+ * Scan the project's `media/` directory and automatically link any unlinked
+ * file nodes whose name matches a file inside `media/`.  Because the project
+ * directory was opened via `showDirectoryPicker` the browser already has
+ * permission — no user interaction required.
+ */
+async function resolveMediaFiles(
+  projectDir: FileSystemDirectoryHandle,
+  tree: FileNode[],
+): Promise<void> {
+  let mediaDir: FileSystemDirectoryHandle
+  try {
+    mediaDir = await projectDir.getDirectoryHandle('media')
+  } catch {
+    // No media/ directory — nothing to resolve
+    return
+  }
+
+  // Build a lookup: filename → handle for every file in media/
+  const mediaFiles = new Map<string, FileSystemFileHandle>()
+  for await (const entry of mediaDir.values()) {
+    if (entry.kind === 'file') {
+      mediaFiles.set(entry.name, entry as FileSystemFileHandle)
+    }
+  }
+
+  if (mediaFiles.size === 0) return
+
+  // Walk the tree and resolve unlinked nodes
+  const unlinked = collectFileNodes(tree).filter(
+    (n) => !n.handle && !_isTimelineNode(n),
+  )
+
+  let resolved = 0
+  for (const node of unlinked) {
+    const mediaHandle = mediaFiles.get(node.name)
+    if (!mediaHandle) continue
+
+    try {
+      const file = await mediaHandle.getFile()
+      node.handle = mediaHandle
+      node.url = URL.createObjectURL(file)
+      node.permissionState = 'granted'
+      saveFileHandle(node.sourceId!, mediaHandle)
+      resolved++
+    } catch (e) {
+      console.warn(`Failed to auto-resolve "${node.name}" from media/:`, e)
+    }
+  }
+
+  if (resolved > 0) {
+    console.log(`Auto-resolved ${resolved} file(s) from project media/ folder`)
+  }
 }
 
 // ── Re-link helpers ──

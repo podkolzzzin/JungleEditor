@@ -186,7 +186,7 @@ function scheduleRetry() {
  * the one-frame lag from async prop round-trips.
  */
 function renderCurrentFrame() {
-  if (!props.doc || !canvasEl.value) return
+  if (!props.doc || !canvasEl.value || !compositor.initialized) return
 
   // Use local playTime — always up-to-date, not subject to Vue prop batching
   const time = playTime
