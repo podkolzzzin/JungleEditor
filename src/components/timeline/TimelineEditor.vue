@@ -19,6 +19,8 @@ const {
   clipDrag,
   clipDragTargetTrack,
   edgeDrag,
+  trackDrag,
+  trackDragOverIndex,
   clipWidth,
   clipOffsetPx,
   totalDuration,
@@ -44,6 +46,7 @@ const {
   togglePlay,
   seekTo,
   onEdgeMouseDown,
+  onTrackReorderStart,
   inspectedClip,
   onSave,
 } = useTimeline()
@@ -104,6 +107,8 @@ function onKeyDown(e: KeyboardEvent) {
         :clip-drag="clipDrag"
         :clip-drag-target-track="clipDragTargetTrack"
         :edge-drag="edgeDrag"
+        :track-drag="trackDrag"
+        :track-drag-over-index="trackDragOverIndex"
         :drag-over-track="dragOverTrack"
         :drag-over-new-track="dragOverNewTrack"
         :pixels-per-second="pixelsPerSecond"
@@ -130,6 +135,7 @@ function onKeyDown(e: KeyboardEvent) {
         @clip-remove="removeClip"
         @clip-mousedown="onClipMouseDown"
         @edge-mousedown="onEdgeMouseDown"
+        @track-reorder-start="onTrackReorderStart"
         @wheel="onTimelineWheel"
         @seek="seekTo"
         @toggle-play="togglePlay"
