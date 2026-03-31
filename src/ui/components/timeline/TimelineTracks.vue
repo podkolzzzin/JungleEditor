@@ -197,7 +197,7 @@ onBeforeUnmount(() => {
                 class="track-volume-slider"
                 data-testid="track-volume-slider"
                 min="0"
-                max="1"
+                max="5"
                 step="0.01"
                 :value="track.volume ?? 1"
                 @input="(e: Event) => emit('set-track-volume', ti, Number((e.target as HTMLInputElement).value))"
