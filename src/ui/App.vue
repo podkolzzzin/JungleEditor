@@ -10,6 +10,7 @@ import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
 import ResizeHandle from './components/ResizeHandle.vue'
 import CompressorDialog from './components/CompressorDialog.vue'
+import InputDialog from './components/InputDialog.vue'
 
 const activePanel = ref('explorer')
 const sidebarWidth = ref(260)
@@ -91,6 +92,9 @@ onMounted(() => {
       @close="onCompressorClose"
       @done="onCompressorDone"
     />
+
+    <!-- VS Code-style input dialog -->
+    <InputDialog />
   </div>
 </template>
 
