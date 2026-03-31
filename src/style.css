@@ -1,0 +1,80 @@
+/* =========================================
+   VS Code Dark Theme — Global Styles
+   ========================================= */
+
+:root {
+  /* Core surfaces */
+  --titlebar-bg: #1e1e1e;
+  --titlebar-fg: #cccccc;
+  --activitybar-bg: #181818;
+  --activitybar-fg: #cccccc;
+  --activitybar-active-fg: #ffffff;
+  --activitybar-active-border: #ffffff;
+  --sidebar-bg: #1e1e1e;
+  --sidebar-fg: #cccccc;
+  --sidebar-fg-dim: #8c8c8c;
+  --editor-bg: #1e1e1e;
+  --statusbar-bg: #007acc;
+  --statusbar-fg: #ffffff;
+  --border-color: #2d2d2d;
+
+  /* Lists & interactions */
+  --list-hover: rgba(255, 255, 255, 0.05);
+  --list-active: #094771;
+  --accent-color: #007acc;
+
+  /* Font stack */
+  --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+
+  /* Tab */
+  --tab-fg: #8c8c8c;
+  --tab-active-fg: #ffffff;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--sidebar-fg);
+  background: var(--editor-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+}
+
+/* Scrollbar styling (VS Code look) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 121, 121, 0.7);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Utility: hide native file inputs */
+input[type='file'] {
+  display: none;
+}
