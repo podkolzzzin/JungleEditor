@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount } from '../store'
+import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
 import FileTreeNode from './FileTreeNode.vue'
 
 const isDragging = ref(false)
@@ -91,6 +91,13 @@ function onCreateFolder() {
     addFolder(name.trim(), getSelectedFolder())
   }
 }
+
+function onCreateTimeline() {
+  const name = prompt('Timeline name:')
+  if (name?.trim()) {
+    createTimeline(name.trim(), getSelectedFolder())
+  }
+}
 </script>
 
 <template>
@@ -113,6 +120,11 @@ function onCreateFolder() {
         <button class="panel-btn" @click="onCreateFolder" title="New Folder">
           <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
             <path d="M14.5 3H7.71l-.85-1.35A.5.5 0 006.5 1.5h-5A1.5 1.5 0 000 3v10a1.5 1.5 0 001.5 1.5h13A1.5 1.5 0 0016 13V4.5A1.5 1.5 0 0014.5 3zM9 11H7V9H5V7h2V5h2v2h2v2H9v2z"/>
+          </svg>
+        </button>
+        <button class="panel-btn" @click="onCreateTimeline" title="New Timeline">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+            <path d="M1 2.5A1.5 1.5 0 012.5 1h3.879a1.5 1.5 0 011.06.44l1.122 1.12A1.5 1.5 0 009.62 3H13.5A1.5 1.5 0 0115 4.5v8a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-10zM2 5v7.5a.5.5 0 00.5.5h11a.5.5 0 00.5-.5V5H2z"/>
           </svg>
         </button>
       </div>

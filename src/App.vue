@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { sidebarOpen, hasProject, projectName, loading, initFromStorage } from './store'
+import { ref, onMounted, computed } from 'vue'
+import { sidebarOpen, hasProject, projectName, loading, initFromStorage, activeFile, activeTimeline, isTimelineNode } from './store'
 import ActivityBar from './components/ActivityBar.vue'
 import FileTree from './components/FileTree.vue'
 import VideoPreview from './components/VideoPreview.vue'
+import TimelineEditor from './components/timeline/TimelineEditor.vue'
 import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
 
 const activePanel = ref('explorer')
+
+const showTimeline = computed(() => {
+  return activeFile.value && isTimelineNode(activeFile.value) && activeTimeline.value
+})
 
 function onActivitySelect(id: string) {
   if (activePanel.value === id && sidebarOpen.value) {
@@ -46,7 +51,8 @@ onMounted(() => {
       </div>
 
       <div class="editor-area">
-        <VideoPreview />
+        <TimelineEditor v-if="showTimeline" />
+        <VideoPreview v-else />
       </div>
     </div>
 

@@ -1,11 +1,12 @@
 /**
- * Filesystem operations on the project directory and .sources/ subfolder.
+ * Filesystem operations on the project directory and sources/ subfolder.
  * Uses the File System Access API (Chromium only).
  */
 
-import type { SourceMetadata, FileNode } from './types'
+import type { SourceMetadata, FileNode, TimelineDocument } from './types'
+import yaml from 'js-yaml'
 
-const SOURCES_DIR = '.sources'
+const SOURCES_DIR = 'sources'
 
 // ── Directory operations ──
 
@@ -146,13 +147,86 @@ export async function updateSourcePath(
   await writable.close()
 }
 
+// ── .timeline file operations ──
+
+export function serializeTimeline(doc: TimelineDocument): string {
+  return yaml.dump(doc, { lineWidth: 120, noRefs: true, sortKeys: false })
+}
+
+export function parseTimeline(text: string): TimelineDocument | null {
+  try {
+    const obj = yaml.load(text) as any
+    if (!obj || typeof obj !== 'object') return null
+    return {
+      name: obj.name || 'Untitled',
+      created: obj.created || new Date().toISOString(),
+      modified: obj.modified || new Date().toISOString(),
+      resolution: obj.resolution,
+      fps: obj.fps,
+      tracks: Array.isArray(obj.tracks) ? obj.tracks : [],
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function writeTimelineFile(
+  sourcesDir: FileSystemDirectoryHandle,
+  timelineId: string,
+  doc: TimelineDocument
+): Promise<void> {
+  doc.modified = new Date().toISOString()
+  const fileHandle = await sourcesDir.getFileHandle(`${timelineId}.timeline`, { create: true })
+  const writable = await fileHandle.createWritable()
+  await writable.write(serializeTimeline(doc))
+  await writable.close()
+}
+
+export async function readTimelineFile(
+  sourcesDir: FileSystemDirectoryHandle,
+  timelineId: string
+): Promise<TimelineDocument | null> {
+  try {
+    const fileHandle = await sourcesDir.getFileHandle(`${timelineId}.timeline`)
+    const file = await fileHandle.getFile()
+    const text = await file.text()
+    return parseTimeline(text)
+  } catch {
+    return null
+  }
+}
+
+export async function deleteTimelineFile(
+  sourcesDir: FileSystemDirectoryHandle,
+  timelineId: string
+): Promise<void> {
+  try {
+    await sourcesDir.removeEntry(`${timelineId}.timeline`)
+  } catch {
+    // File may not exist
+  }
+}
+
+/** Metadata stored alongside the timeline in sources/ for tree placement */
+export interface TimelineSourceMeta {
+  id: string
+  name: string
+  path: string
+  created: string
+}
+
 // ── Read all sources ──
 
 export async function readAllSources(
   sourcesDir: FileSystemDirectoryHandle
-): Promise<{ sources: SourceMetadata[]; folders: { id: string; name: string; path: string }[] }> {
+): Promise<{
+  sources: SourceMetadata[]
+  folders: { id: string; name: string; path: string }[]
+  timelines: TimelineSourceMeta[]
+}> {
   const sources: SourceMetadata[] = []
   const folders: { id: string; name: string; path: string }[] = []
+  const timelines: TimelineSourceMeta[] = []
 
   for await (const entry of sourcesDir.values()) {
     if (entry.kind !== 'file') continue
@@ -171,10 +245,23 @@ export async function readAllSources(
         const id = entry.name.replace('.folder', '')
         folders.push({ id, ...parsed })
       }
+    } else if (entry.name.endsWith('.timeline')) {
+      const file = await fileHandle.getFile()
+      const text = await file.text()
+      const doc = parseTimeline(text)
+      if (doc) {
+        const id = entry.name.replace('.timeline', '')
+        timelines.push({
+          id,
+          name: doc.name || entry.name,
+          path: '', // timelines live at root for now; could be extended
+          created: doc.created,
+        })
+      }
     }
   }
 
-  return { sources, folders }
+  return { sources, folders, timelines }
 }
 
 // ── Build tree from flat sources ──
@@ -182,7 +269,8 @@ export async function readAllSources(
 export function buildTreeFromSources(
   sources: SourceMetadata[],
   folders: { id: string; name: string; path: string }[],
-  handleMap: Map<string, FileSystemFileHandle>
+  handleMap: Map<string, FileSystemFileHandle>,
+  timelines: TimelineSourceMeta[] = []
 ): FileNode[] {
   const root: FileNode[] = []
 
@@ -263,6 +351,22 @@ export function buildTreeFromSources(
       permissionState: handle ? 'prompt' : 'denied',
     }
     parent.push(fileNode)
+  }
+
+  // Place timeline files in the tree
+  for (const tl of timelines) {
+    const parent = ensureFolderPath(tl.path)
+    const timelineNode: FileNode = {
+      id: tl.id,
+      name: `${tl.name}.timeline`,
+      type: 'file',
+      sourceId: tl.id,
+      path: tl.path,
+      mimeType: 'application/x-timeline',
+      added: tl.created,
+      permissionState: 'granted',
+    }
+    parent.push(timelineNode)
   }
 
   // Sort: folders first, then files, alphabetically

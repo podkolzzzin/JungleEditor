@@ -1,0 +1,29 @@
+Done:
+- Basic VUE project setup
+- Setup CI Deployment pipeline
+- Allow open andd preview video files
+- Project load/reload, restore links to files
+- Timeline create/preview
+
+
+Backlog:
+# Timeline epic
+    - Split video
+    - Move video
+    - Add multiple videos
+    - Add images
+    - Add titles
+    - Change video speed
+# Proxy video generation
+
+# Render epic
+    - Add context menu for timeline: Render (if render file exists for timeline than allow select othervise create)
+    - Add rendering UI with some settings: resolution, extension, codec
+# Git versiong epic
+    - Handle Ctrl + S (save icon) to create git commit (auto message)
+# Coloring
+    - DaVinci Resolve color fixing tool
+# Audio
+    - Compressor
+    - Sound level change
+    - Sync video by sound

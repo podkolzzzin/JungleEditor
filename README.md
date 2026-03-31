@@ -4,3 +4,7 @@ It can use all most modern web technologies like: wasm, webcodecs, webGPU, webAu
 
 # Production
 CloudFlare pages - https://editor.podkolzin.consulting
+
+# Agents Configuration
+- Chrome WebTools MCP is set up and recommended
+- 

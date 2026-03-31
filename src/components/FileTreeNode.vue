@@ -1,11 +1,28 @@
 <script setup lang="ts">
 import type { FileNode } from '../types'
-import { selectFile, toggleFolder, removeNode, activeFile } from '../store'
+import { selectFile, toggleFolder, removeNode, activeFile, isTimelineNode } from '../store'
 
 defineProps<{ nodes: FileNode[]; depth?: number }>()
 
 function isVideo(name: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogg|flv|wmv|m4v|ts)$/i.test(name)
+}
+
+function isTimeline(name: string): boolean {
+  return name.endsWith('.timeline')
+}
+
+function isDraggableVideo(node: FileNode): boolean {
+  return node.type === 'file' && !isTimelineNode(node)
+}
+
+function onDragStart(e: DragEvent, node: FileNode) {
+  if (!e.dataTransfer) return
+  e.dataTransfer.effectAllowed = 'copy'
+  e.dataTransfer.setData('application/x-jungle-clip', JSON.stringify({
+    sourceId: node.sourceId || node.id,
+    sourceName: node.name,
+  }))
 }
 </script>
 
@@ -40,10 +57,16 @@ function isVideo(name: string): boolean {
           'needs-permission': !node.url && node.handle,
           'no-handle': !node.url && !node.handle,
         }"
+        :draggable="isDraggableVideo(node)"
         @click="selectFile(node)"
+        @dragstart="isDraggableVideo(node) && onDragStart($event, node)"
       >
         <span class="indent" :style="{ width: ((depth ?? 0) + 1) * 16 + 'px' }"></span>
-        <svg v-if="isVideo(node.name)" class="icon video-icon" viewBox="0 0 16 16" fill="currentColor">
+        <!-- Timeline icon -->
+        <svg v-if="isTimeline(node.name)" class="icon timeline-icon" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M1 2.5A1.5 1.5 0 012.5 1h3.879a1.5 1.5 0 011.06.44l1.122 1.12A1.5 1.5 0 009.62 3H13.5A1.5 1.5 0 0115 4.5v8a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-10zM2 5v7.5a.5.5 0 00.5.5h11a.5.5 0 00.5-.5V5H2z"/>
+        </svg>
+        <svg v-else-if="isVideo(node.name)" class="icon video-icon" viewBox="0 0 16 16" fill="currentColor">
           <path d="M0 1a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H1a1 1 0 01-1-1V1zm4 3v8l8-4-8-4z"/>
         </svg>
         <svg v-else class="icon" viewBox="0 0 16 16" fill="currentColor">
@@ -132,6 +155,9 @@ export default { name: 'FileTreeNode' }
 }
 .icon.video-icon {
   color: #e5c07b;
+}
+.icon.timeline-icon {
+  color: #c678dd;
 }
 .folder .icon {
   color: #d19a66;

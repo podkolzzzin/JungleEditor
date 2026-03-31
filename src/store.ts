@@ -4,7 +4,7 @@
  */
 
 import { reactive, ref } from 'vue'
-import type { FileNode, SourceMetadata } from './types'
+import type { FileNode, SourceMetadata, TimelineDocument } from './types'
 import {
   saveFileHandle,
   loadAllFileHandles,
@@ -19,12 +19,16 @@ import {
   deleteSourceFile,
   writeFolderMarker,
   deleteFolderMarker,
+  writeTimelineFile,
+  readTimelineFile,
+  deleteTimelineFile,
 } from './project'
 
 // ── Reactive state ──
 
 export const fileTree = reactive<FileNode[]>([])
 export const activeFile = ref<FileNode | null>(null)
+export const activeTimeline = ref<TimelineDocument | null>(null)
 export const sidebarOpen = ref(true)
 export const projectHandle = ref<FileSystemDirectoryHandle | null>(null)
 export const projectName = ref('')
@@ -101,12 +105,12 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   console.log('sources directory ready')
 
   // Read sources/ metadata and in-memory handle cache
-  const { sources, folders } = await readAllSources(sd)
+  const { sources, folders, timelines } = await readAllSources(sd)
   const handleMap = loadAllFileHandles()
-  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${handleMap.size} cached handle(s)`)
+  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${timelines.length} timeline(s), ${handleMap.size} cached handle(s)`)
 
   // Build tree
-  const tree = buildTreeFromSources(sources, folders, handleMap)
+  const tree = buildTreeFromSources(sources, folders, handleMap, timelines)
   fileTree.splice(0, fileTree.length, ...tree)
   fileCount.value = sources.length
 
@@ -114,6 +118,7 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   unlinkedCount.value = countUnlinked(tree)
 
   activeFile.value = null
+  activeTimeline.value = null
   hasProject.value = true
   console.log('Project loaded successfully')
 }
@@ -127,6 +132,7 @@ export async function closeProject(): Promise<void> {
 
   fileTree.splice(0, fileTree.length)
   activeFile.value = null
+  activeTimeline.value = null
   projectHandle.value = null
   projectName.value = ''
   sourcesDir.value = null
@@ -246,11 +252,21 @@ export async function removeNode(nodeId: string, list: FileNode[] = fileTree): P
 
 async function cleanupNode(node: FileNode): Promise<void> {
   if (node.type === 'file') {
-    if (node.url) URL.revokeObjectURL(node.url)
-    if (node.sourceId && sourcesDir.value) {
-      await deleteSourceFile(sourcesDir.value, node.sourceId).catch(() => {})
-      removeFileHandle(node.sourceId)
-      fileCount.value = Math.max(0, fileCount.value - 1)
+    if (isTimelineNode(node)) {
+      // Timeline file: delete .timeline from sources/
+      if (node.sourceId && sourcesDir.value) {
+        await deleteTimelineFile(sourcesDir.value, node.sourceId).catch(() => {})
+      }
+      if (activeFile.value?.id === node.id) {
+        activeTimeline.value = null
+      }
+    } else {
+      if (node.url) URL.revokeObjectURL(node.url)
+      if (node.sourceId && sourcesDir.value) {
+        await deleteSourceFile(sourcesDir.value, node.sourceId).catch(() => {})
+        removeFileHandle(node.sourceId)
+        fileCount.value = Math.max(0, fileCount.value - 1)
+      }
     }
   } else if (node.type === 'folder') {
     // Remove folder marker
@@ -291,6 +307,68 @@ export async function addFolder(name: string, parentFolder?: FileNode): Promise<
   target.push(folder)
 }
 
+// ── Timeline operations ──
+
+/**
+ * Create a new .timeline file in the project.
+ * Prompts for a name and creates it in the selected folder (or root).
+ */
+export async function createTimeline(name: string, parentFolder?: FileNode): Promise<void> {
+  if (!sourcesDir.value) return
+
+  const timelineId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const doc: TimelineDocument = {
+    name,
+    created: now,
+    modified: now,
+    resolution: '1920x1080',
+    fps: 30,
+    tracks: [
+      {
+        name: 'Track 1',
+        clips: [],
+      },
+    ],
+  }
+
+  await writeTimelineFile(sourcesDir.value, timelineId, doc)
+
+  const targetPath = parentFolder?.path || ''
+  const targetChildren = parentFolder?.children ?? fileTree
+
+  const node: FileNode = {
+    id: timelineId,
+    name: `${name}.timeline`,
+    type: 'file',
+    sourceId: timelineId,
+    path: targetPath,
+    mimeType: 'application/x-timeline',
+    added: now,
+    permissionState: 'granted',
+  }
+  targetChildren.push(node)
+
+  // Select the new timeline
+  activeFile.value = node
+  activeTimeline.value = doc
+}
+
+/**
+ * Save the currently active timeline document back to disk.
+ */
+export async function saveTimeline(): Promise<void> {
+  if (!sourcesDir.value || !activeFile.value || !activeTimeline.value) return
+  if (!isTimelineNode(activeFile.value)) return
+
+  const timelineId = activeFile.value.sourceId
+  if (!timelineId) return
+
+  await writeTimelineFile(sourcesDir.value, timelineId, activeTimeline.value)
+  console.log(`Timeline "${activeTimeline.value.name}" saved.`)
+}
+
 export function toggleFolder(node: FileNode): void {
   if (node.type === 'folder') {
     node.expanded = !node.expanded
@@ -299,9 +377,25 @@ export function toggleFolder(node: FileNode): void {
 
 // ── File selection & permission resolution ──
 
+export function isTimelineNode(node: FileNode): boolean {
+  return node.mimeType === 'application/x-timeline' || node.name.endsWith('.timeline')
+}
+
 export async function selectFile(node: FileNode): Promise<void> {
   if (node.type !== 'file') return
   activeFile.value = node
+
+  // If it's a timeline file, load the timeline document
+  if (isTimelineNode(node)) {
+    if (sourcesDir.value && node.sourceId) {
+      const doc = await readTimelineFile(sourcesDir.value, node.sourceId)
+      activeTimeline.value = doc
+    }
+    return
+  }
+
+  // Clear timeline when switching to a video
+  activeTimeline.value = null
 
   // If the file has no handle (e.g. after reload), prompt user to re-link it
   if (!node.handle && !node.url) {
