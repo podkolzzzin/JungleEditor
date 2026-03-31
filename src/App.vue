@@ -7,8 +7,10 @@ import VideoPreview from './components/VideoPreview.vue'
 import TimelineEditor from './components/timeline/TimelineEditor.vue'
 import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
+import ResizeHandle from './components/ResizeHandle.vue'
 
 const activePanel = ref('explorer')
+const sidebarWidth = ref(260)
 
 const showTimeline = computed(() => {
   return activeFile.value && isTimelineNode(activeFile.value) && activeTimeline.value
@@ -21,6 +23,10 @@ function onActivitySelect(id: string) {
     activePanel.value = id
     sidebarOpen.value = true
   }
+}
+
+function onSidebarResize(delta: number) {
+  sidebarWidth.value = Math.max(150, Math.min(600, sidebarWidth.value + delta))
 }
 
 onMounted(() => {
@@ -46,9 +52,11 @@ onMounted(() => {
     <div class="main-area">
       <ActivityBar :active="activePanel" @select="onActivitySelect" />
 
-      <div class="sidebar" v-show="sidebarOpen">
+      <div class="sidebar" v-show="sidebarOpen" :style="{ width: sidebarWidth + 'px' }">
         <FileTree v-if="activePanel === 'explorer'" />
       </div>
+
+      <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />
 
       <div class="editor-area">
         <TimelineEditor v-if="showTimeline" />
@@ -105,9 +113,8 @@ onMounted(() => {
 }
 
 .sidebar {
-  width: 260px;
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--border-color);
+  border-right: none;
   flex-shrink: 0;
   overflow: hidden;
 }
