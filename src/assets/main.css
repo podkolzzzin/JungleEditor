@@ -1,0 +1,54 @@
+:root {
+  --color-bg-primary: #1a1a2e;
+  --color-bg-secondary: #16213e;
+  --color-bg-panel: #0f3460;
+  --color-bg-surface: #222244;
+  --color-accent: #e94560;
+  --color-accent-hover: #ff6b81;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #a0a0b0;
+  --color-border: #2a2a4a;
+  --color-timeline-bg: #12122a;
+  --color-clip-video: #3a86ff;
+  --color-clip-audio: #8338ec;
+  --color-clip-text: #ff006e;
+  --color-playhead: #e94560;
+
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --panel-radius: 8px;
+  --gap-sm: 4px;
+  --gap-md: 8px;
+  --gap-lg: 16px;
+
+  --timeline-track-height: 48px;
+  --toolbar-height: 48px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
