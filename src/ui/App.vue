@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { sidebarOpen, hasProject, projectName, loading, initFromStorage, activeFile, activeTimeline, isTimelineNode } from './store'
+import type { FileNode } from '../core/types'
 import ActivityBar from './components/ActivityBar.vue'
 import FileTree from './components/FileTree.vue'
 import VideoPreview from './components/VideoPreview.vue'
@@ -8,6 +9,7 @@ import TimelineEditor from './components/timeline/TimelineEditor.vue'
 import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
 import ResizeHandle from './components/ResizeHandle.vue'
+import CompressorDialog from './components/CompressorDialog.vue'
 
 const activePanel = ref('explorer')
 const sidebarWidth = ref(260)
@@ -15,6 +17,22 @@ const sidebarWidth = ref(260)
 const showTimeline = computed(() => {
   return activeFile.value && isTimelineNode(activeFile.value) && activeTimeline.value
 })
+
+// ── Compressor dialog ──
+const compressorNode = ref<FileNode | null>(null)
+
+function onCompress(node: FileNode) {
+  compressorNode.value = node
+}
+
+function onCompressorClose() {
+  compressorNode.value = null
+}
+
+function onCompressorDone(_outputName: string) {
+  // Future: offer to import the output file
+  compressorNode.value = null
+}
 
 function onActivitySelect(id: string) {
   if (activePanel.value === id && sidebarOpen.value) {
@@ -53,7 +71,7 @@ onMounted(() => {
       <ActivityBar :active="activePanel" @select="onActivitySelect" />
 
       <div class="sidebar" v-show="sidebarOpen" :style="{ width: sidebarWidth + 'px' }">
-        <FileTree v-if="activePanel === 'explorer'" />
+        <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" />
       </div>
 
       <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />
@@ -65,6 +83,14 @@ onMounted(() => {
     </div>
 
     <StatusBar />
+
+    <!-- Compressor dialog (modal overlay) -->
+    <CompressorDialog
+      v-if="compressorNode"
+      :node="compressorNode"
+      @close="onCompressorClose"
+      @done="onCompressorDone"
+    />
   </div>
 </template>
 
