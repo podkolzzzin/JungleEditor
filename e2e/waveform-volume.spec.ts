@@ -18,10 +18,9 @@ test.describe('Waveform & Volume', () => {
     await addVideoFile(page, 'test-video.mp4')
 
     // Create a timeline
-    await page.evaluate(() => {
-      window.prompt = () => 'Waveform Test'
-    })
     await page.locator('.panel-btn[title="New Timeline"]').click()
+    await page.locator('.input-dialog-field').fill('Waveform Test')
+    await page.locator('.input-dialog-field').press('Enter')
     await expect(page.locator('.timeline-editor')).toBeVisible({ timeout: 5000 })
 
     // ── Verify track volume slider is present on empty tracks ──

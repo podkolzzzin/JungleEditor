@@ -157,6 +157,9 @@ async function preloadSources() {
     }
   }
   await Promise.all([...ids].map(id => ensureVideoSource(id)))
+  // After all sources are loaded, render so the player shows the first frame
+  // (the initial renderCurrentFrame call may have run before loading finished).
+  if (!props.isPlaying) renderCurrentFrame()
 }
 
 // ── Rendering ──
@@ -202,17 +205,22 @@ function renderCurrentFrame() {
 
   const video = getVideoSync(info.clip.sourceId)
   if (!video) {
-    // Trigger async load, render black for now
-    ensureVideoSource(info.clip.sourceId).then(() => {
-      if (!props.isPlaying) renderCurrentFrame()
-    })
+    // Trigger async load, render black for now, and poll via macrotask
+    // (NOT via .then() — that creates a microtask loop when the source is
+    //  already being loaded by preloadSources, because ensureVideoSource
+    //  returns null immediately, and the resolved Promise's .then() fires
+    //  as a microtask before the actual load I/O can complete.)
+    ensureVideoSource(info.clip.sourceId)
     compositor.renderBlack()
+    scheduleRetry()
     return
   }
 
-  // Seek to correct source time — skip if already seeking to avoid seek storm
+  // Seek to correct source time — skip if already seeking to avoid seek storm.
+  // Tolerance is 0.05 s (≈1.5 frames at 30 fps) to prevent seeked→render→re-seek
+  // loops caused by the browser landing on the nearest frame boundary.
   const seekDelta = Math.abs(video.currentTime - info.sourceTime)
-  if (!video.seeking && seekDelta > 0.01) {
+  if (!video.seeking && seekDelta > 0.05) {
     if (!props.isPlaying || seekDelta > 0.15) {
       video.currentTime = info.sourceTime
     }

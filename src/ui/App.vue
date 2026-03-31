@@ -1,24 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { sidebarOpen, hasProject, projectName, loading, initFromStorage, activeFile, activeTimeline, isTimelineNode } from './store'
+import { ref, onMounted } from 'vue'
+import { sidebarOpen, hasProject, projectName, loading, initFromStorage, paneLayout } from './store'
 import type { FileNode } from '../core/types'
 import type { PendingImport } from './store'
 import ActivityBar from './components/ActivityBar.vue'
 import FileTree from './components/FileTree.vue'
-import VideoPreview from './components/VideoPreview.vue'
-import TimelineEditor from './components/timeline/TimelineEditor.vue'
 import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
 import ResizeHandle from './components/ResizeHandle.vue'
+import EditorLayout from './components/EditorLayout.vue'
 import CompressorDialog from './components/CompressorDialog.vue'
 import ImportModeDialog from './components/ImportModeDialog.vue'
+import InputDialog from './components/InputDialog.vue'
 
 const activePanel = ref('explorer')
 const sidebarWidth = ref(260)
-
-const showTimeline = computed(() => {
-  return activeFile.value && isTimelineNode(activeFile.value) && activeTimeline.value
-})
 
 // ── Import-mode dialog ──
 const pendingImport = ref<PendingImport | null>(null)
@@ -94,8 +90,7 @@ onMounted(() => {
       <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />
 
       <div class="editor-area">
-        <TimelineEditor v-if="showTimeline" />
-        <VideoPreview v-else />
+        <EditorLayout :layout="paneLayout" />
       </div>
     </div>
 
@@ -116,6 +111,9 @@ onMounted(() => {
       @done="onImportDone"
       @cancel="onImportCancel"
     />
+
+    <!-- VS Code-style input dialog -->
+    <InputDialog />
   </div>
 </template>
 
