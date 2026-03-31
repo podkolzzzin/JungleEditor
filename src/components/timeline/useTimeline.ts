@@ -147,7 +147,7 @@ export function useTimeline() {
 
   function addTrack() {
     if (!doc.value) return
-    doc.value.tracks.push({ name: `Track ${doc.value.tracks.length + 1}`, clips: [] })
+    doc.value.tracks.push({ name: `Track ${doc.value.tracks.length + 1}`, clips: [], volume: 1.0 })
     markDirty()
   }
 
@@ -155,6 +155,14 @@ export function useTimeline() {
     if (!doc.value) return
     doc.value.tracks.splice(index, 1)
     if (selectedClip.value?.trackIndex === index) selectedClip.value = null
+    markDirty()
+  }
+
+  function setTrackVolume(trackIndex: number, vol: number) {
+    if (!doc.value) return
+    const track = doc.value.tracks[trackIndex]
+    if (!track) return
+    track.volume = Math.max(0, Math.min(1, vol))
     markDirty()
   }
 
@@ -251,6 +259,7 @@ export function useTimeline() {
         offset: 0,
         operations: [],
       }],
+      volume: 1.0,
     }
     doc.value.tracks.push(track)
     markDirty()
@@ -518,6 +527,7 @@ export function useTimeline() {
     markDirty,
     addTrack,
     removeTrack,
+    setTrackVolume,
     removeClip,
     selectClip,
 

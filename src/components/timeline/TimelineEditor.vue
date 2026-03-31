@@ -27,6 +27,7 @@ const {
   markDirty,
   addTrack,
   removeTrack,
+  setTrackVolume,
   removeClip,
   selectClip,
   onTrackDragOver,
@@ -130,6 +131,7 @@ function onKeyDown(e: KeyboardEvent) {
         @clip-remove="removeClip"
         @clip-mousedown="onClipMouseDown"
         @edge-mousedown="onEdgeMouseDown"
+        @set-track-volume="setTrackVolume"
         @wheel="onTimelineWheel"
         @seek="seekTo"
         @toggle-play="togglePlay"
