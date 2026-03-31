@@ -1,53 +1,18 @@
 import { computed, ref, watch, nextTick } from 'vue'
-import type { TimelineClip, TimelineTrack } from '../../types'
+import type { TimelineClip, TimelineTrack } from '../../../core/types'
 import {
   activeFile,
   activeTimeline,
   saveTimeline,
 } from '../../store'
-import { getClipSpeed, getClipEffectiveDuration } from './compositor'
+import { getClipEffectiveDuration } from '../../../core/timeline/clip-helpers'
+import { splitClipInTrack, splitAllAtPlayhead, computeTotalDuration } from '../../../core/timeline/operations'
+import { MIN_PPS, MAX_PPS, DEFAULT_PPS, DEFAULT_CLIP_DURATION } from '../../../core/timeline/constants'
+import { formatTime } from '../../../core/timeline/format'
 
-// ── Constants ──
-
-export const MIN_PPS = 4
-export const MAX_PPS = 200
-export const DEFAULT_PPS = 20
-export const DEFAULT_CLIP_DURATION = 10
-export const TRACK_COLORS = ['#e06c75', '#e5c07b', '#98c379', '#56b6c2', '#c678dd', '#d19a66', '#61afef']
-
-// ── Formatting helpers ──
-
-export function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  const f = Math.floor((seconds % 1) * 10)
-  return `${m}:${s.toString().padStart(2, '0')}.${f}`
-}
-
-export function formatTimeFull(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  const ms = Math.round((seconds % 1) * 1000)
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`
-}
-
-export function parseTimeInput(value: string): number {
-  const parts = value.split(':')
-  if (parts.length >= 2) {
-    const last = parts.pop()!
-    const [s, ms] = last.split('.')
-    let total = Number(s) + Number(ms || 0) / (last.includes('.') ? Math.pow(10, (ms || '').length) : 1)
-    const mins = Number(parts.pop() || 0)
-    const hrs = Number(parts.pop() || 0)
-    return hrs * 3600 + mins * 60 + total
-  }
-  return Number(value) || 0
-}
-
-export function trackColor(index: number): string {
-  return TRACK_COLORS[index % TRACK_COLORS.length]
-}
+// Re-export core constants and formatters for use by other timeline components
+export { MIN_PPS, MAX_PPS, DEFAULT_PPS, DEFAULT_CLIP_DURATION, TRACK_COLORS, trackColor } from '../../../core/timeline/constants'
+export { formatTime, formatTimeFull, parseTimeInput } from '../../../core/timeline/format'
 
 // ── Composable ──
 
@@ -111,14 +76,7 @@ export function useTimeline() {
 
   function totalDuration(): number {
     if (!doc.value) return 0
-    let max = 0
-    for (const track of doc.value.tracks) {
-      for (const clip of track.clips) {
-        const end = (clip.offset ?? 0) + getClipEffectiveDuration(clip)
-        if (end > max) max = end
-      }
-    }
-    return max
+    return computeTotalDuration(doc.value)
   }
 
   function timelineWidth(): number {
@@ -356,61 +314,17 @@ export function useTimeline() {
     if (!doc.value) return
     const track = doc.value.tracks[trackIndex]
     if (!track) return
-    const clip = track.clips[clipIndex]
-    if (!clip) return
-
-    const duration = clip.out - clip.in
-    if (duration < 0.2) return
-
-    const splitPoint = atSourceTime ?? clip.in + duration / 2
-    if (splitPoint <= clip.in + 0.05 || splitPoint >= clip.out - 0.05) return
-
-    const speed = getClipSpeed(clip)
-    const rightClip: TimelineClip = {
-      sourceId: clip.sourceId,
-      sourceName: clip.sourceName,
-      in: splitPoint,
-      out: clip.out,
-      offset: (clip.offset ?? 0) + (splitPoint - clip.in) / speed,
-      operations: clip.operations ? clip.operations.filter(op => op.type !== 'fade_in').map(op => ({ ...op })) : [],
+    if (splitClipInTrack(track, clipIndex, atSourceTime)) {
+      selectedClip.value = { trackIndex, clipIndex }
+      markDirty()
     }
-
-    // Left clip keeps fade_in, loses fade_out
-    if (clip.operations) {
-      clip.operations = clip.operations.filter(op => op.type !== 'fade_out').map(op => ({ ...op }))
-    }
-
-    clip.out = splitPoint
-    track.clips.splice(clipIndex + 1, 0, rightClip)
-    selectedClip.value = { trackIndex, clipIndex }
-    markDirty()
   }
 
   /** Split all clips at the global playhead position (blade cut across all tracks) */
   function splitAtPlayhead() {
     if (!doc.value) return
-    const t = globalPlayhead.value
-    let didSplit = false
-
-    // Iterate in reverse to handle index shifts from splicing
-    for (let ti = doc.value.tracks.length - 1; ti >= 0; ti--) {
-      const track = doc.value.tracks[ti]
-      for (let ci = track.clips.length - 1; ci >= 0; ci--) {
-        const clip = track.clips[ci]
-        const clipStart = clip.offset ?? 0
-        const speed = getClipSpeed(clip)
-        const effectiveDuration = getClipEffectiveDuration(clip)
-        const clipEnd = clipStart + effectiveDuration
-
-        if (t > clipStart + 0.05 && t < clipEnd - 0.05) {
-          // Compute the source time at the playhead position
-          const sourceTime = clip.in + (t - clipStart) * speed
-          splitClip(ti, ci, sourceTime)
-          didSplit = true
-        }
-      }
-    }
-
+    const didSplit = splitAllAtPlayhead(doc.value, globalPlayhead.value)
+    if (didSplit) markDirty()
     return didSplit
   }
 

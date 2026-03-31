@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue'
-import type { TimelineDocument } from '../../types'
+import type { TimelineDocument } from '../../../core/types'
 import type { ClipSelection, TrimEdge } from './useTimeline'
 import { formatTime, trackColor, DEFAULT_PPS } from './useTimeline'
 import ClipBlock from './ClipBlock.vue'

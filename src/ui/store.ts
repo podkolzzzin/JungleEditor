@@ -4,7 +4,8 @@
  */
 
 import { reactive, ref } from 'vue'
-import type { FileNode, SourceMetadata, TimelineDocument } from './types'
+import type { FileNode, SourceMetadata, TimelineDocument } from '../core/types'
+import { isTimelineNode as _isTimelineNode, findNodeById } from '../core/types'
 import {
   saveFileHandle,
   loadAllFileHandles,
@@ -378,7 +379,7 @@ export function toggleFolder(node: FileNode): void {
 // ── File selection & permission resolution ──
 
 export function isTimelineNode(node: FileNode): boolean {
-  return node.mimeType === 'application/x-timeline' || node.name.endsWith('.timeline')
+  return _isTimelineNode(node)
 }
 
 export async function selectFile(node: FileNode): Promise<void> {
@@ -436,14 +437,7 @@ export async function resolveFileUrl(node: FileNode): Promise<string | null> {
 // ── Helper: find a node by ID ──
 
 export function findNode(nodeId: string, list: FileNode[] = fileTree): FileNode | null {
-  for (const n of list) {
-    if (n.id === nodeId) return n
-    if (n.children) {
-      const found = findNode(nodeId, n.children)
-      if (found) return found
-    }
-  }
-  return null
+  return findNodeById(nodeId, list)
 }
 
 // ── Helper: get the currently selected folder for adding files ──

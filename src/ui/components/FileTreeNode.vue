@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FileNode } from '../types'
+import type { FileNode } from '../../core/types'
 import { selectFile, toggleFolder, removeNode, activeFile, isTimelineNode } from '../store'
 
 defineProps<{ nodes: FileNode[]; depth?: number }>()

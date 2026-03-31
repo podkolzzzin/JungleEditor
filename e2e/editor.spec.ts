@@ -50,6 +50,12 @@ test.describe('JungleEditor E2E', () => {
     page,
   }) => {
     test.setTimeout(60_000)
+    // Debug: capture page errors and crashes
+    page.on('pageerror', (err) => console.log('PAGE ERROR:', err.message))
+    page.on('crash', () => console.log('PAGE CRASHED'))
+    page.on('console', (msg) => {
+      console.log(`BROWSER [${msg.type()}]: ${msg.text()}`)
+    })
     // ── 1. Navigate to app and see the landing screen ──
     await page.goto('/')
     await expect(page.locator('h1')).toHaveText('Jungle Editor')
@@ -159,50 +165,71 @@ test.describe('JungleEditor E2E', () => {
     expect(sourceId).toBeTruthy()
 
     // Inject a clip into the first track of the timeline document
+    // We access the reactive timeline doc via the Vue app component tree
     await page.evaluate(
-      ({ sid }) => {
-        // Access Vue's reactive proxy for activeTimeline via the app's internal module system
-        // Vite exposes modules via ESM — we can use the __vite_ssr_import_0__ pattern
-        // But the simplest approach is to find the reactive object from the DOM
-        // The timeline doc is reactive, so any Vue component watching it will update
+      (sid) => {
+        // Find the Vue app instance from the #app mount point
+        const appEl = document.getElementById('app')
+        const vueApp = appEl && (appEl as any).__vue_app__
+        if (!vueApp) { console.log('No Vue app found'); return }
 
-        // We access it via the rendered component's internal state
-        const timelineEditor = document.querySelector('.timeline-editor')
-        if (!timelineEditor) return
-
-        // Use Vite's HMR module system to access the store
-        // Alternative: walk the Vue component tree
-        const vueInstance = (timelineEditor as any).__vueParentComponent
-          || (timelineEditor as any).__vue_app__
-
-        // Fallback: directly mutate via import if possible
-        // In dev mode, we can access modules through Vite's module graph
-      },
-      { sid: sourceId },
-    )
-
-    // More reliable: use page.evaluate with dynamic import to access the store
-    await page.evaluate(async (sid) => {
-      // In Vite dev mode, we can dynamically import the store module
-      try {
-        const store = await import('/src/store.ts')
-        if (store.activeTimeline && store.activeTimeline.value) {
-          const doc = store.activeTimeline.value
-          if (doc.tracks.length > 0) {
-            doc.tracks[0].clips.push({
-              sourceId: sid,
-              sourceName: 'test-video.mp4',
-              in: 0,
-              out: 3,
-              offset: 0,
-              operations: [],
-            })
+        // Walk the component tree to find a component that has activeTimeline
+        // The app's setup() imports activeTimeline from the store, so it's in the setupState
+        function findTimelineDoc(instance: any): any {
+          if (!instance) return null
+          // Check setupState for activeTimeline ref
+          const setup = instance.setupState
+          if (setup && setup.activeTimeline && setup.activeTimeline.value) {
+            return setup.activeTimeline.value
           }
+          // Check subTree's component children
+          if (instance.subTree) {
+            const children = getChildren(instance.subTree)
+            for (const child of children) {
+              const result = findTimelineDoc(child)
+              if (result) return result
+            }
+          }
+          return null
         }
-      } catch (e) {
-        console.error('Failed to import store:', e)
-      }
-    }, sourceId)
+
+        function getChildren(vnode: any): any[] {
+          const result: any[] = []
+          if (vnode.component) result.push(vnode.component)
+          if (Array.isArray(vnode.children)) {
+            for (const child of vnode.children) {
+              if (child && typeof child === 'object') {
+                if (child.component) result.push(child.component)
+                result.push(...getChildren(child))
+              }
+            }
+          }
+          if (vnode.dynamicChildren) {
+            for (const child of vnode.dynamicChildren) {
+              if (child.component) result.push(child.component)
+              result.push(...getChildren(child))
+            }
+          }
+          return result
+        }
+
+        const rootInstance = vueApp._instance
+        const doc = findTimelineDoc(rootInstance)
+        if (!doc) { console.log('No activeTimeline found in component tree'); return }
+
+        if (doc.tracks.length > 0) {
+          doc.tracks[0].clips.push({
+            sourceId: sid,
+            sourceName: 'test-video.mp4',
+            in: 0,
+            out: 3,
+            offset: 0,
+            operations: [],
+          })
+        }
+      },
+      sourceId,
+    )
 
     // Wait for Vue reactivity to update the DOM
     await page.waitForTimeout(500)

@@ -1,3 +1,10 @@
+/**
+ * Core type definitions for Jungle Editor.
+ * These types are UI-agnostic and can be used in any runtime (browser, Node.js CLI, etc.).
+ */
+
+// ── File / Project types ──
+
 export interface FileNode {
   id: string
   name: string
@@ -7,11 +14,17 @@ export interface FileNode {
   /** UUID linking to .source file (files only) */
   sourceId?: string
 
-  /** Runtime blob URL for video playback */
+  /**
+   * Runtime resource URL for playback (e.g. blob URL in the browser).
+   * Set by the host platform, not serialized.
+   */
   url?: string
 
-  /** File System Access API handle (runtime only, not serialized) */
-  handle?: FileSystemFileHandle
+  /**
+   * Platform-specific file handle (e.g. FileSystemFileHandle in the browser).
+   * Set by the host platform, not serialized.
+   */
+  handle?: unknown
 
   /** Permission state after reload */
   permissionState?: 'granted' | 'prompt' | 'denied'
@@ -39,6 +52,21 @@ export interface SourceMetadata {
   size: number
   type: string
   added: string
+  path: string
+}
+
+/** Metadata stored alongside a timeline in sources/ for tree placement */
+export interface TimelineSourceMeta {
+  id: string
+  name: string
+  path: string
+  created: string
+}
+
+/** Folder marker metadata */
+export interface FolderMeta {
+  id: string
+  name: string
   path: string
 }
 
@@ -89,4 +117,23 @@ export interface TimelineDocument {
   resolution?: string
   fps?: number
   tracks: TimelineTrack[]
+}
+
+// ── Utility: check if a file node is a timeline ──
+
+export function isTimelineNode(node: FileNode): boolean {
+  return node.mimeType === 'application/x-timeline' || node.name.endsWith('.timeline')
+}
+
+// ── Utility: find a node by ID in a tree ──
+
+export function findNodeById(nodeId: string, list: FileNode[]): FileNode | null {
+  for (const n of list) {
+    if (n.id === nodeId) return n
+    if (n.children) {
+      const found = findNodeById(nodeId, n.children)
+      if (found) return found
+    }
+  }
+  return null
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TimelineClip } from '../../types'
+import type { TimelineClip } from '../../../core/types'
 import { formatTime, trackColor, type TrimEdge } from './useTimeline'
 
 const props = defineProps<{

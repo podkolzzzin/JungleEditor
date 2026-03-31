@@ -5,7 +5,7 @@
  * Handles playback, seeking, and applies timeline operations (speed, fades, mute).
  */
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import type { TimelineDocument } from '../../types'
+import type { TimelineDocument } from '../../../core/types'
 import { findNode, resolveFileUrl } from '../../store'
 import { TimelineCompositor, findActiveClip } from './compositor'
 import { formatTimeFull } from './useTimeline'

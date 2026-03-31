@@ -8,7 +8,9 @@ Done:
 - Preview player
 - E2E tests setup
 - Decouple Core logic from UI
-
+- Show sound waveform
+- Make panels resizable
+- Drag n drop for timelines reordering
 
 Backlog:
 # Timeline epic
