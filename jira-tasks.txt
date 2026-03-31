@@ -4,6 +4,10 @@ Done:
 - Allow open andd preview video files
 - Project load/reload, restore links to files
 - Timeline create/preview
+- Split video, reorder
+- Preview player
+- E2E tests setup
+- Decouple Core logic from UI
 
 
 Backlog:

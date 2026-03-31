@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { formatTimeFull } from './useTimeline'
-import type { Ref } from 'vue'
 
 defineProps<{
   previewUrl: string | null

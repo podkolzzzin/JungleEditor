@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TimelineClip, TimelineOperation } from '../../types'
+import type { TimelineClip } from '../../types'
 import { formatTimeFull, parseTimeInput } from './useTimeline'
 
 const props = defineProps<{
