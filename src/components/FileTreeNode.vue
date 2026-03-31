@@ -49,8 +49,13 @@ function isVideo(name: string): boolean {
         <svg v-else class="icon" viewBox="0 0 16 16" fill="currentColor">
           <path d="M3.5 0h6.793a1 1 0 01.707.293l2.707 2.707a1 1 0 01.293.707V14.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 14.5v-13A1.5 1.5 0 013.5 0z"/>
         </svg>
+        <!-- Link indicator for files needing re-linking -->
+        <svg v-if="!node.url && !node.handle" class="lock-badge" viewBox="0 0 16 16" fill="currentColor" width="10" height="10" title="Click to re-link">
+          <path d="M4.715 6.542L3.343 7.914a3 3 0 104.243 4.243l1.828-1.829A3 3 0 008.586 5.5L8 6.086a1.002 1.002 0 00-.154.199 2 2 0 01.861 3.337L6.88 11.45a2 2 0 11-2.83-2.83l.793-.792a4.018 4.018 0 01-.128-1.287z"/>
+          <path d="M6.586 4.672A3 3 0 007.414 9.5l.586-.586a1.002 1.002 0 00.154-.199 2 2 0 01-.861-3.337L9.12 3.55a2 2 0 112.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 10-4.243-4.243L6.586 4.672z"/>
+        </svg>
         <!-- Lock indicator for files needing re-permission -->
-        <svg v-if="!node.url && node.handle" class="lock-badge" viewBox="0 0 16 16" fill="currentColor" width="8" height="8">
+        <svg v-else-if="!node.url && node.handle" class="lock-badge" viewBox="0 0 16 16" fill="currentColor" width="8" height="8">
           <path d="M11 7V5a3 3 0 00-6 0v2H4v7h8V7h-1zm-4-2a1 1 0 012 0v2H7V5z"/>
         </svg>
         <span class="label">{{ node.name }}</span>
@@ -101,8 +106,8 @@ export default { name: 'FileTreeNode' }
   opacity: 0.6;
 }
 .tree-item.no-handle {
-  opacity: 0.35;
-  text-decoration: line-through;
+  opacity: 0.55;
+  font-style: italic;
 }
 .indent {
   flex-shrink: 0;

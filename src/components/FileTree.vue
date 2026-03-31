@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder } from '../store'
+import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount } from '../store'
 import FileTreeNode from './FileTreeNode.vue'
 
 const isDragging = ref(false)
@@ -42,7 +42,16 @@ async function onDrop(e: DragEvent) {
         path: targetPath,
       }
       if (sourcesDir.value) {
-        await writeSourceFile(sourcesDir.value, meta)
+        try {
+          await writeSourceFile(sourcesDir.value, meta)
+          console.log(`Written .source file for drag-dropped "${file.name}" (${sourceId})`)
+        } catch (e) {
+          console.error(`Failed to write .source for drag-dropped "${file.name}":`, e)
+          continue
+        }
+      } else {
+        console.error('sourcesDir is null during drag-drop — skipping .source write')
+        continue
       }
       await saveFileHandle(sourceId, handle)
       const url = URL.createObjectURL(file)
@@ -89,6 +98,13 @@ function onCreateFolder() {
     <div class="panel-header">
       <span class="panel-title">EXPLORER</span>
       <div class="panel-actions">
+        <button v-if="unlinkedCount > 0" class="panel-btn relink-btn" @click="relinkAllFiles" title="Re-link source files">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+            <path d="M8 3a5 5 0 00-4.546 2.914.5.5 0 01-.908-.426A6 6 0 0114 8a6 6 0 01-6 6 6 6 0 01-5.454-3.488.5.5 0 11.908-.426A5 5 0 108 3z"/>
+            <path d="M8 1v4l3-2-3-2z"/>
+          </svg>
+          <span class="relink-badge">{{ unlinkedCount }}</span>
+        </button>
         <button class="panel-btn" @click="onAddFiles" title="Add Video Files">
           <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
             <path d="M14 7H9V2H7v5H2v2h5v5h2V9h5z"/>
@@ -214,5 +230,23 @@ function onCreateFolder() {
 .close-project-btn:hover {
   opacity: 1;
   color: var(--sidebar-fg);
+}
+.relink-btn {
+  position: relative;
+}
+.relink-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e5c07b;
+  color: #1e1e2e;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 7px;
+  padding: 0 3px;
 }
 </style>

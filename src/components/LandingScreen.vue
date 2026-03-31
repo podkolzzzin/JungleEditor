@@ -41,7 +41,7 @@ import { createProject, openProject } from '../store'
       </div>
 
       <p class="footer-hint">
-        A project is a folder with a <code>.sources</code> directory where file references are stored.
+        A project is a folder with a <code>sources</code> directory where file references are stored.
       </p>
     </div>
   </div>

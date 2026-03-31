@@ -6,12 +6,10 @@
 import { reactive, ref } from 'vue'
 import type { FileNode, SourceMetadata } from './types'
 import {
-  saveProjectHandle,
-  loadProjectHandle,
   saveFileHandle,
   loadAllFileHandles,
   removeFileHandle,
-  clearAll as clearDB,
+  clearAll as clearHandleCache,
 } from './persistence'
 import {
   ensureSourcesDir,
@@ -34,36 +32,19 @@ export const sourcesDir = ref<FileSystemDirectoryHandle | null>(null)
 export const loading = ref(true)
 export const hasProject = ref(false)
 export const fileCount = ref(0)
+export const unlinkedCount = ref(0)
+
+
 
 // ── Initialization ──
 
 /**
- * Try to resume the last opened project from IndexedDB.
- * If the handle is found and permission is granted, load the tree.
- * Otherwise, show the landing screen.
+ * Initialize the app. No auto-restore — user always picks the project folder.
  */
-export async function initFromStorage(): Promise<void> {
-  loading.value = true
-  try {
-    const handle = await loadProjectHandle()
-    if (!handle) {
-      loading.value = false
-      return
-    }
-
-    // Check if we still have permission
-    const perm = await handle.requestPermission({ mode: 'readwrite' })
-    if (perm !== 'granted') {
-      loading.value = false
-      return
-    }
-
-    await loadProject(handle)
-  } catch (e) {
-    console.warn('Could not restore project:', e)
-  }
+export function initFromStorage(): void {
   loading.value = false
 }
+
 
 /**
  * User action: create a new project by picking/creating an empty directory.
@@ -71,7 +52,6 @@ export async function initFromStorage(): Promise<void> {
 export async function createProject(): Promise<void> {
   try {
     const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
-    await saveProjectHandle(handle)
     await loadProject(handle)
   } catch (e: any) {
     if (e.name === 'AbortError') return
@@ -85,7 +65,6 @@ export async function createProject(): Promise<void> {
 export async function openProject(): Promise<void> {
   try {
     const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
-    await saveProjectHandle(handle)
     await loadProject(handle)
   } catch (e: any) {
     if (e.name === 'AbortError') return
@@ -100,20 +79,43 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   projectHandle.value = handle
   projectName.value = handle.name
 
-  const sd = await ensureSourcesDir(handle)
-  sourcesDir.value = sd
+  console.log(`Loading project "${handle.name}"...`)
 
-  // Read .sources/ and IndexedDB handles
+  // Ensure we have write permission (needed to create sources/)
+  const perm = await handle.requestPermission({ mode: 'readwrite' })
+  if (perm !== 'granted') {
+    console.error('Write permission denied for project directory')
+    projectHandle.value = null
+    projectName.value = ''
+    return
+  }
+
+  let sd: FileSystemDirectoryHandle
+  try {
+    sd = await ensureSourcesDir(handle)
+  } catch (e) {
+    console.error('Failed to create/open sources directory:', e)
+    throw e
+  }
+  sourcesDir.value = sd
+  console.log('sources directory ready')
+
+  // Read sources/ metadata and in-memory handle cache
   const { sources, folders } = await readAllSources(sd)
-  const handleMap = await loadAllFileHandles()
+  const handleMap = loadAllFileHandles()
+  console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${handleMap.size} cached handle(s)`)
 
   // Build tree
   const tree = buildTreeFromSources(sources, folders, handleMap)
   fileTree.splice(0, fileTree.length, ...tree)
   fileCount.value = sources.length
 
+  // Count how many files have no handle (need re-linking after reload)
+  unlinkedCount.value = countUnlinked(tree)
+
   activeFile.value = null
   hasProject.value = true
+  console.log('Project loaded successfully')
 }
 
 /**
@@ -130,8 +132,9 @@ export async function closeProject(): Promise<void> {
   sourcesDir.value = null
   hasProject.value = false
   fileCount.value = 0
+  unlinkedCount.value = 0
 
-  await clearDB()
+  clearHandleCache()
 }
 
 function revokeAllUrls(nodes: FileNode[]) {
@@ -151,7 +154,10 @@ function revokeAllUrls(nodes: FileNode[]) {
  * Files are added to the currently selected folder or root.
  */
 export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
-  if (!sourcesDir.value) return
+  if (!sourcesDir.value) {
+    console.error('addVideoFiles: sourcesDir is null — project not properly initialized')
+    return
+  }
 
   let handles: FileSystemFileHandle[]
   try {
@@ -187,10 +193,16 @@ export async function addVideoFiles(targetFolder?: FileNode): Promise<void> {
       added: new Date().toISOString(),
       path: targetPath,
     }
-    await writeSourceFile(sourcesDir.value, meta)
+    try {
+      await writeSourceFile(sourcesDir.value!, meta)
+      console.log(`Written .source file for "${file.name}" (${sourceId})`)
+    } catch (e) {
+      console.error(`Failed to write .source file for "${file.name}":`, e)
+      continue
+    }
 
-    // Save handle to IndexedDB
-    await saveFileHandle(sourceId, handle)
+    // Cache handle in memory for this session
+    saveFileHandle(sourceId, handle)
 
     // Create blob URL
     const url = URL.createObjectURL(file)
@@ -237,7 +249,7 @@ async function cleanupNode(node: FileNode): Promise<void> {
     if (node.url) URL.revokeObjectURL(node.url)
     if (node.sourceId && sourcesDir.value) {
       await deleteSourceFile(sourcesDir.value, node.sourceId).catch(() => {})
-      await removeFileHandle(node.sourceId).catch(() => {})
+      removeFileHandle(node.sourceId)
       fileCount.value = Math.max(0, fileCount.value - 1)
     }
   } else if (node.type === 'folder') {
@@ -290,6 +302,12 @@ export function toggleFolder(node: FileNode): void {
 export async function selectFile(node: FileNode): Promise<void> {
   if (node.type !== 'file') return
   activeFile.value = node
+
+  // If the file has no handle (e.g. after reload), prompt user to re-link it
+  if (!node.handle && !node.url) {
+    await relinkFile(node)
+    return
+  }
 
   if (!node.url && node.handle) {
     await resolveFileUrl(node)
@@ -355,4 +373,141 @@ function findFolderByPath(path: string, list: FileNode[] = fileTree): FileNode |
     }
   }
   return undefined
+}
+
+// ── Re-link helpers ──
+
+/** Count file nodes in tree that have no handle */
+function countUnlinked(nodes: FileNode[]): number {
+  let count = 0
+  for (const n of nodes) {
+    if (n.type === 'file' && !n.handle) count++
+    if (n.children) count += countUnlinked(n.children)
+  }
+  return count
+}
+
+/** Collect all file nodes from tree */
+function collectFileNodes(nodes: FileNode[]): FileNode[] {
+  const result: FileNode[] = []
+  for (const n of nodes) {
+    if (n.type === 'file') result.push(n)
+    if (n.children) result.push(...collectFileNodes(n.children))
+  }
+  return result
+}
+
+/**
+ * Re-link a single file node: opens a file picker so the user can
+ * point to the original file on disk.  The handle is cached in memory
+ * and a blob URL is created for playback.
+ */
+export async function relinkFile(node: FileNode): Promise<void> {
+  if (node.type !== 'file') return
+
+  let handles: FileSystemFileHandle[]
+  try {
+    handles = await (window as any).showOpenFilePicker({
+      multiple: false,
+      types: [
+        {
+          description: 'Video files',
+          accept: {
+            'video/*': ['.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.ogg'],
+          },
+        },
+      ],
+    })
+  } catch (e: any) {
+    if (e.name === 'AbortError') return
+    throw e
+  }
+
+  if (!handles.length) return
+  const handle = handles[0]
+
+  // Update handle & blob URL
+  node.handle = handle
+  saveFileHandle(node.sourceId!, handle)
+
+  const file = await handle.getFile()
+  if (node.url) URL.revokeObjectURL(node.url)
+  node.url = URL.createObjectURL(file)
+  node.permissionState = 'granted'
+
+  // Update name/size in .source if the picked file differs
+  if (sourcesDir.value && node.sourceId) {
+    const meta: SourceMetadata = {
+      id: node.sourceId,
+      name: file.name,
+      size: file.size,
+      type: file.type || node.mimeType || 'video/mp4',
+      added: node.added || new Date().toISOString(),
+      path: node.path || '',
+    }
+    node.name = file.name
+    node.size = file.size
+    await writeSourceFile(sourcesDir.value, meta)
+  }
+
+  unlinkedCount.value = countUnlinked(fileTree)
+}
+
+/**
+ * Bulk re-link: let the user pick multiple files at once.
+ * Each picked file is matched to an unlinked tree node by filename.
+ * Unmatched files are silently skipped.
+ */
+export async function relinkAllFiles(): Promise<void> {
+  let handles: FileSystemFileHandle[]
+  try {
+    handles = await (window as any).showOpenFilePicker({
+      multiple: true,
+      types: [
+        {
+          description: 'Video files',
+          accept: {
+            'video/*': ['.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.ogg'],
+          },
+        },
+      ],
+    })
+  } catch (e: any) {
+    if (e.name === 'AbortError') return
+    throw e
+  }
+
+  if (!handles.length) return
+
+  // Build a lookup: filename → unlinked nodes (there may be duplicates)
+  const allFiles = collectFileNodes(fileTree)
+  const unlinkedByName = new Map<string, FileNode[]>()
+  for (const n of allFiles) {
+    if (!n.handle) {
+      const list = unlinkedByName.get(n.name) || []
+      list.push(n)
+      unlinkedByName.set(n.name, list)
+    }
+  }
+
+  let linked = 0
+  for (const handle of handles) {
+    const file = await handle.getFile()
+    const candidates = unlinkedByName.get(file.name)
+    if (!candidates || candidates.length === 0) continue
+
+    const node = candidates.shift()!
+    if (candidates.length === 0) unlinkedByName.delete(file.name)
+
+    node.handle = handle
+    saveFileHandle(node.sourceId!, handle)
+
+    if (node.url) URL.revokeObjectURL(node.url)
+    node.url = URL.createObjectURL(file)
+    node.permissionState = 'granted'
+    linked++
+  }
+
+  unlinkedCount.value = countUnlinked(fileTree)
+  console.log(`Re-linked ${linked} file(s), ${unlinkedCount.value} still unlinked`)
 }
