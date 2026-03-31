@@ -1,9 +1,16 @@
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch } from 'vue'
+import type { Ref } from 'vue'
 import type { TimelineClip, TimelineTrack } from '../../../core/types'
 import {
-  activeFile,
-  activeTimeline,
-  saveTimeline,
+  paneLayout,
+  openTabs,
+  focusedPaneId,
+  findPaneById,
+  getActivePaneTab,
+  setTabDirty,
+  saveTimelineById,
+  findNode,
+  sourcesDir,
 } from '../../store'
 import { getClipEffectiveDuration } from '../../../core/timeline/clip-helpers'
 import { splitClipInTrack, splitAllAtPlayhead, computeTotalDuration } from '../../../core/timeline/operations'
@@ -23,9 +30,24 @@ export interface ClipSelection {
   clipIndex: number
 }
 
-export function useTimeline() {
+export function useTimeline(paneIdRef?: Ref<string>) {
+  // ── Derive pane-specific state ──
+  const paneId = computed(() => paneIdRef?.value ?? focusedPaneId.value)
+
+  const activeTab = computed(() => {
+    const pane = findPaneById(paneLayout.value, paneId.value)
+    if (!pane || pane.type !== 'leaf' || !pane.activeTabId) return null
+    return openTabs.get(pane.activeTabId) ?? null
+  })
+
+  const doc = computed(() => activeTab.value?.timelineDoc ?? null)
+
+  const activeFileForPane = computed(() => {
+    const tab = activeTab.value
+    return tab ? findNode(tab.fileNodeId) : null
+  })
+
   // ── Core state ──
-  const doc = computed(() => activeTimeline.value)
   const dirty = ref(false)
   const selectedClip = ref<ClipSelection | null>(null)
   const dragOverTrack = ref<number | null>(null)
@@ -60,11 +82,18 @@ export function useTimeline() {
   const trackDragOverIndex = ref<number | null>(null)
 
   // ── Watchers ──
-  watch(() => activeTimeline.value, () => {
-    dirty.value = false
+  // Reset transient state when the active tab/doc changes (tab switch)
+  watch(activeTab, (newTab) => {
+    dirty.value = newTab?.dirty ?? false
     selectedClip.value = null
     globalPlayhead.value = 0
     isPlaying.value = false
+  })
+
+  // Sync dirty state to the tab (so it's preserved across tab switches)
+  watch(dirty, (val) => {
+    const tab = activeTab.value
+    if (tab) setTabDirty(tab.id, val)
   })
 
   function markDirty() {
@@ -463,14 +492,17 @@ export function useTimeline() {
   // ── Save ──
 
   async function onSave() {
-    await saveTimeline()
+    const file = activeFileForPane.value
+    const timeline = doc.value
+    if (!file?.sourceId || !timeline || !sourcesDir.value) return
+    await saveTimelineById(file.sourceId, timeline)
     dirty.value = false
   }
 
   return {
-    // Re-export store refs used in template
-    activeFile,
-    activeTimeline,
+    // Pane-scoped active file (used in template guards)
+    activeFile: activeFileForPane,
+    activeTimeline: doc,
 
     // State
     doc,

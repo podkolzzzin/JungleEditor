@@ -322,10 +322,12 @@ test.describe('JungleEditor E2E', () => {
     await expect(splitBtn).toBeVisible()
 
     // ── 16. Close the timeline tab ──
-    await page.locator('.tab-close').first().click()
+    // With the multi-tab system we must close the specific timeline tab
+    const timelineTabItem = page.locator('.tab-item', { hasText: 'My Test Timeline.timeline' })
+    await timelineTabItem.locator('.tab-close').click()
 
-    // Should return to video preview or welcome screen
-    await expect(page.locator('.timeline-editor')).not.toBeVisible()
+    // Should return to video preview (test-video.mp4 tab is still open)
+    await expect(page.locator('.timeline-editor')).not.toBeVisible({ timeout: 5000 })
 
     // ── 17. Re-open the timeline ──
     await page.locator('.tree-item .label', { hasText: 'My Test Timeline.timeline' }).click()

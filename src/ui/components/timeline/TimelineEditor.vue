@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, toRef } from 'vue'
 import { useTimeline } from './useTimeline'
 import TimelinePlayer from './TimelinePlayer.vue'
 import ClipInspector from './ClipInspector.vue'
 import TimelineTracks from './TimelineTracks.vue'
 import ResizeHandle from '../ResizeHandle.vue'
+
+const props = defineProps<{ paneId: string }>()
 
 const topSectionHeight = ref(280)
 const inspectorWidth = ref(280)
@@ -19,7 +21,6 @@ function onInspectorResize(delta: number) {
 
 const {
   activeFile,
-  activeTimeline,
   doc,
   dirty,
   selectedClip,
@@ -63,7 +64,7 @@ const {
   onTrackReorderStart,
   inspectedClip,
   onSave,
-} = useTimeline()
+} = useTimeline(toRef(props, 'paneId'))
 
 // Keyboard shortcuts
 function onKeyDown(e: KeyboardEvent) {
@@ -71,30 +72,16 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault()
     togglePlay()
   }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault()
+    onSave()
+  }
 }
 </script>
 
 <template>
   <div class="timeline-editor" v-if="doc && activeFile" tabindex="0" @keydown="onKeyDown">
-    <!-- Tab bar -->
-    <div class="tab-bar">
-      <div class="tab active">
-        <svg class="tab-icon" viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
-          <path d="M1 2.5A1.5 1.5 0 012.5 1h3.879a1.5 1.5 0 011.06.44l1.122 1.12A1.5 1.5 0 009.62 3H13.5A1.5 1.5 0 0115 4.5v8a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-10zM2 5v7.5a.5.5 0 00.5.5h11a.5.5 0 00.5-.5V5H2z"/>
-        </svg>
-        <span class="tab-label">{{ activeFile.name }}</span>
-        <span v-if="dirty" class="tab-dirty">&bull;</span>
-        <button class="tab-close" @click="activeFile = null; activeTimeline = null">×</button>
-      </div>
-      <div class="tab-spacer"></div>
-      <button class="save-btn" :class="{ active: dirty }" @click="onSave" :disabled="!dirty" title="Save timeline">
-        <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
-          <path d="M11.5 1h-8A1.5 1.5 0 002 2.5v11A1.5 1.5 0 003.5 15h9a1.5 1.5 0 001.5-1.5v-9l-2.5-3.5zM5 2h4v3H5V2zm6 12H5V9h6v5z"/>
-        </svg>
-      </button>
-    </div>
-
-    <!-- Main content -->
+    <!-- Main content (no tab bar — handled by EditorPane) -->
     <div class="editor-body">
       <!-- Top section: Player + Clip inspector -->
       <div class="top-section" :style="{ height: topSectionHeight + 'px' }">
@@ -158,6 +145,7 @@ function onKeyDown(e: KeyboardEvent) {
         @wheel="onTimelineWheel"
         @seek="seekTo"
         @toggle-play="togglePlay"
+        @track-reorder-start="onTrackReorderStart"
       />
     </div>
   </div>
@@ -171,51 +159,6 @@ function onKeyDown(e: KeyboardEvent) {
   background: var(--editor-bg);
   overflow: hidden;
 }
-
-/* ── Tab bar ── */
-.tab-bar {
-  display: flex;
-  align-items: stretch;
-  height: 35px;
-  background: var(--titlebar-bg);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  font-size: 13px;
-  color: var(--tab-fg);
-  border-right: 1px solid var(--border-color);
-  cursor: default;
-  max-width: 250px;
-}
-.tab.active {
-  background: var(--editor-bg);
-  color: var(--tab-active-fg);
-  border-bottom: 1px solid var(--accent-color);
-  margin-bottom: -1px;
-}
-.tab-icon { flex-shrink: 0; color: #c678dd; }
-.tab-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tab-dirty { color: #e5c07b; font-size: 18px; line-height: 1; }
-.tab-close {
-  background: none; border: none; color: var(--tab-fg);
-  cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1;
-  border-radius: 3px; opacity: 0;
-}
-.tab:hover .tab-close { opacity: 1; }
-.tab-close:hover { background: rgba(255,255,255,0.1); }
-.tab-spacer { flex: 1; }
-.save-btn {
-  display: flex; align-items: center; justify-content: center;
-  background: none; border: none; color: var(--tab-fg);
-  padding: 0 12px; cursor: pointer; opacity: 0.4;
-}
-.save-btn.active { opacity: 1; color: var(--accent-color); }
-.save-btn:disabled { cursor: default; }
 
 /* ── Editor body ── */
 .editor-body {
