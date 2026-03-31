@@ -103,7 +103,7 @@ export function useRender() {
           progress.value = overallProgress
           updateTask(`task-${jobId}`, {
             progress: overallProgress,
-            ...(msg as any).segment !== undefined ? { currentSegment: msg.segment } : {},
+            currentSegment: msg.segment,
           })
           break
         }

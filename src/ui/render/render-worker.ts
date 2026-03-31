@@ -181,7 +181,7 @@ async function renderTimeline(input: RenderWorkerInput): Promise<void> {
         segment: segIndex,
         data: segmentData,
       } satisfies RenderWorkerOutput,
-      { transfer: [segmentData.buffer] } as any,
+      [segmentData.buffer] as unknown as StructuredSerializeOptions,
     )
   }
 
