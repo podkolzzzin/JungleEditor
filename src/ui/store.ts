@@ -465,11 +465,11 @@ function findFolderByPath(path: string, list: FileNode[] = fileTree): FileNode |
 
 // ── Re-link helpers ──
 
-/** Count file nodes in tree that have no handle */
+/** Count file nodes in tree that have no handle (excludes timelines which never have handles) */
 function countUnlinked(nodes: FileNode[]): number {
   let count = 0
   for (const n of nodes) {
-    if (n.type === 'file' && !n.handle) count++
+    if (n.type === 'file' && !n.handle && n.mimeType !== 'application/x-timeline') count++
     if (n.children) count += countUnlinked(n.children)
   }
   return count
