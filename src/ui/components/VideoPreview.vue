@@ -30,7 +30,7 @@ async function requestAccess() {
         :key="fileNodeId"
         :src="file!.url"
         controls
-        autoplay
+        preload="metadata"
         class="video-player"
       />
     </div>

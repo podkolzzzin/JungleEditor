@@ -3,10 +3,19 @@
  * WaveformTrack — Renders audio waveform visualization for clips on a track.
  * Each clip gets a waveform canvas positioned at its offset. The waveform is
  * extracted via Web Audio API's OfflineAudioContext.decodeAudioData().
+ *
+ * Performance safeguards:
+ * - Files over MAX_WAVEFORM_BYTES (100 MB) are skipped (placeholder shown)
+ * - Extraction is deferred via requestIdleCallback to avoid blocking the UI
+ * - Active extractions are tracked to prevent duplicate work
+ * - Canvas redraws are debounced during rapid zoom/volume changes
  */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import type { TimelineClip } from '../../../core/types'
 import { findNode, resolveFileUrl } from '../../store'
+
+/** Maximum file size for automatic waveform extraction (100 MB) */
+const MAX_WAVEFORM_BYTES = 100 * 1024 * 1024
 
 const props = defineProps<{
   clips: TimelineClip[]
@@ -20,8 +29,13 @@ const props = defineProps<{
 
 // Cache waveform peak data per sourceId
 const waveformCache = new Map<string, Float32Array>()
+/** Sources currently being extracted (prevents duplicate work) */
+const extractingSourceIds = new Set<string>()
+/** Sources that were skipped due to size limits */
+const skippedSourceIds = new Set<string>()
 const canvasRefs = ref<Map<number, HTMLCanvasElement>>(new Map())
 let unmounted = false
+let drawDebounceId: number | null = null
 
 function setCanvasRef(el: unknown, index: number) {
   if (el instanceof HTMLCanvasElement) {
@@ -32,29 +46,43 @@ function setCanvasRef(el: unknown, index: number) {
 }
 
 async function extractWaveform(sourceId: string): Promise<Float32Array | null> {
-  if (waveformCache.has(sourceId)) {
-    return waveformCache.get(sourceId)!
-  }
+  if (waveformCache.has(sourceId)) return waveformCache.get(sourceId)!
+  if (skippedSourceIds.has(sourceId)) return null
+  if (extractingSourceIds.has(sourceId)) return null // already in progress
 
   const node = findNode(sourceId)
   if (!node) return null
 
-  if (!node.url && node.handle) {
-    await resolveFileUrl(node)
-  }
+  if (!node.url && node.handle) await resolveFileUrl(node)
   if (!node.url) return null
 
+  extractingSourceIds.add(sourceId)
+
   try {
+    // HEAD-check: skip files over 100 MB to prevent multi-hundred-MB allocations
+    const headResp = await fetch(node.url, { method: 'HEAD' })
+    const contentLength = Number(headResp.headers.get('Content-Length') || 0)
+    if (contentLength > MAX_WAVEFORM_BYTES) {
+      console.warn(`[WaveformTrack] Skipping waveform for ${sourceId}: file too large (${(contentLength / 1e6).toFixed(0)} MB)`)
+      skippedSourceIds.add(sourceId)
+      extractingSourceIds.delete(sourceId)
+      return null
+    }
+
     const response = await fetch(node.url)
     const arrayBuffer = await response.arrayBuffer()
 
-    // Use a temporary AudioContext just for decoding — duration-agnostic
-    const tempCtx = new AudioContext()
-    const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer)
-    await tempCtx.close()
+    // Yield to the main thread before heavy decode
+    await new Promise<void>(r => setTimeout(r, 0))
+
+    // Use OfflineAudioContext for non-blocking decode (doesn't create audio output)
+    // Estimate: 48 kHz sample rate, stereo, duration ≈ fileSize / 192000
+    const estimatedDuration = Math.max(1, contentLength / 192000)
+    const sampleRate = 48000
+    const offlineCtx = new OfflineAudioContext(1, Math.ceil(estimatedDuration * sampleRate), sampleRate)
+    const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer)
 
     const rawData = audioBuffer.getChannelData(0)
-    // Downsample to ~200 samples per second (enough for visual display)
     const samplesPerSecond = 200
     const totalSamples = Math.ceil(audioBuffer.duration * samplesPerSecond)
     const peaks = new Float32Array(totalSamples)
@@ -72,11 +100,12 @@ async function extractWaveform(sourceId: string): Promise<Float32Array | null> {
     }
 
     waveformCache.set(sourceId, peaks)
+    extractingSourceIds.delete(sourceId)
     return peaks
   } catch {
-    // If audio decode fails (e.g. no audio track), return empty waveform
     const fallback = new Float32Array(200)
     waveformCache.set(sourceId, fallback)
+    extractingSourceIds.delete(sourceId)
     return fallback
   }
 }
@@ -141,7 +170,14 @@ function waveformFingerprint() {
 
 watch(
   () => [waveformFingerprint(), props.pixelsPerSecond, props.volume],
-  () => { renderAllWaveforms() },
+  () => {
+    // Debounce redraws during rapid zoom/volume changes (Ctrl+scroll = ~60 Hz)
+    if (drawDebounceId !== null) cancelAnimationFrame(drawDebounceId)
+    drawDebounceId = requestAnimationFrame(() => {
+      drawDebounceId = null
+      renderAllWaveforms()
+    })
+  },
 )
 
 onMounted(() => {

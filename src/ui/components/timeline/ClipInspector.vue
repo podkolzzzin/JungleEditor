@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TimelineClip } from '../../../core/types'
 import { COLOR_PROFILES, DEFAULT_COLOR_GRADE } from '../../../core/color'
+import { DEFAULT_AUDIO_COMPRESSOR } from '../../../core/timeline'
 import { formatTimeFull, parseTimeInput } from './useTimeline'
 
 const props = defineProps<{
@@ -34,6 +35,14 @@ function addOperation(type: string) {
     op.gGain = DEFAULT_COLOR_GRADE.gGain
     op.bGain = DEFAULT_COLOR_GRADE.bGain
   }
+  if (type === 'audio_compressor') {
+    op.threshold = DEFAULT_AUDIO_COMPRESSOR.threshold
+    op.ratio = DEFAULT_AUDIO_COMPRESSOR.ratio
+    op.attack = DEFAULT_AUDIO_COMPRESSOR.attack
+    op.release = DEFAULT_AUDIO_COMPRESSOR.release
+    op.knee = DEFAULT_AUDIO_COMPRESSOR.knee
+    op.makeupGain = DEFAULT_AUDIO_COMPRESSOR.makeupGain
+  }
   props.clip.operations.push(op)
   markDirty()
 }
@@ -62,6 +71,16 @@ function onColorGradeSlider(op: any, field: string, value: number) {
   op[field] = value
   // Clear profileName if user manually adjusts a slider
   op.profileName = undefined
+  markDirty()
+}
+
+function onCompressorSlider(op: any, field: string, value: number) {
+  op[field] = value
+  markDirty()
+}
+
+function resetCompressor(op: any) {
+  Object.assign(op, { ...DEFAULT_AUDIO_COMPRESSOR })
   markDirty()
 }
 </script>
@@ -124,6 +143,7 @@ function onColorGradeSlider(op: any, field: string, value: number) {
               <option value="fade_out">Fade Out</option>
               <option value="mute">Mute</option>
               <option value="color_grade">Color Grade</option>
+              <option value="audio_compressor">Audio Compressor</option>
             </select>
           </div>
         </div>
@@ -144,6 +164,8 @@ function onColorGradeSlider(op: any, field: string, value: number) {
               <input class="insp-input mini mono" type="number" step="0.1" min="0" :value="op.duration ?? 1" @input="(e: Event) => { op.duration = Number((e.target as HTMLInputElement).value); markDirty() }" />
             </template>
             <template v-else-if="op.type === 'color_grade'">
+            </template>
+            <template v-else-if="op.type === 'audio_compressor'">
             </template>
             <button class="op-remove" @click="removeOperation(oi)">×</button>
           <!-- Color grade expanded panel (shown below the badge row) -->
@@ -204,6 +226,49 @@ function onColorGradeSlider(op: any, field: string, value: number) {
               <input type="range" class="cg-slider cg-slider-b" min="0" max="2" step="0.01" :value="op.bGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
               <input type="number" class="insp-input mini mono cg-num" min="0" max="2" step="0.01" :value="op.bGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
             </div>
+          <!-- Audio compressor expanded panel (shown below the badge row) -->
+          <div v-if="op.type === 'audio_compressor'" class="ac-panel">
+            <div class="ac-header-row">
+              <span class="ac-title">Dynamics Compressor</span>
+              <button class="cg-reset-btn" @click="resetCompressor(op)" title="Reset to defaults">Reset</button>
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Threshold</label>
+              <input type="range" class="cg-slider ac-slider" min="-100" max="0" step="0.5" :value="op.threshold ?? -24" @input="(e: Event) => onCompressorSlider(op, 'threshold', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="-100" max="0" step="0.5" :value="op.threshold ?? -24" @input="(e: Event) => onCompressorSlider(op, 'threshold', Number((e.target as HTMLInputElement).value))" />
+              <span class="ac-unit">dB</span>
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Ratio</label>
+              <input type="range" class="cg-slider ac-slider" min="1" max="20" step="0.1" :value="op.ratio ?? 4" @input="(e: Event) => onCompressorSlider(op, 'ratio', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="1" max="20" step="0.1" :value="op.ratio ?? 4" @input="(e: Event) => onCompressorSlider(op, 'ratio', Number((e.target as HTMLInputElement).value))" />
+              <span class="ac-unit">:1</span>
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Attack</label>
+              <input type="range" class="cg-slider ac-slider" min="0" max="1" step="0.001" :value="op.attack ?? 0.003" @input="(e: Event) => onCompressorSlider(op, 'attack', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="1" step="0.001" :value="op.attack ?? 0.003" @input="(e: Event) => onCompressorSlider(op, 'attack', Number((e.target as HTMLInputElement).value))" />
+              <span class="ac-unit">s</span>
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Release</label>
+              <input type="range" class="cg-slider ac-slider" min="0" max="1" step="0.001" :value="op.release ?? 0.25" @input="(e: Event) => onCompressorSlider(op, 'release', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="1" step="0.001" :value="op.release ?? 0.25" @input="(e: Event) => onCompressorSlider(op, 'release', Number((e.target as HTMLInputElement).value))" />
+              <span class="ac-unit">s</span>
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Knee</label>
+              <input type="range" class="cg-slider ac-slider" min="0" max="40" step="0.5" :value="op.knee ?? 30" @input="(e: Event) => onCompressorSlider(op, 'knee', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="40" step="0.5" :value="op.knee ?? 30" @input="(e: Event) => onCompressorSlider(op, 'knee', Number((e.target as HTMLInputElement).value))" />
+              <span class="ac-unit">dB</span>
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Makeup</label>
+              <input type="range" class="cg-slider ac-slider" min="0" max="24" step="0.5" :value="op.makeupGain ?? 0" @input="(e: Event) => onCompressorSlider(op, 'makeupGain', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="24" step="0.5" :value="op.makeupGain ?? 0" @input="(e: Event) => onCompressorSlider(op, 'makeupGain', Number((e.target as HTMLInputElement).value))" />
+              <span class="ac-unit">dB</span>
+            </div>
+          </div>
           </div>
           </div>
         </div>
@@ -347,6 +412,7 @@ function onColorGradeSlider(op: any, field: string, value: number) {
 .op-badge.fade_out { background: rgba(152,195,121,0.15); color: #98c379; }
 .op-badge.mute { background: rgba(198,120,221,0.15); color: #c678dd; }
 .op-badge.color_grade { background: rgba(97,175,239,0.15); color: #61afef; }
+.op-badge.audio_compressor { background: rgba(229,192,123,0.15); color: #e5c07b; }
 .op-remove {
   background: none; border: none; color: var(--sidebar-fg-dim);
   cursor: pointer; font-size: 13px; padding: 0 2px; line-height: 1;
@@ -445,5 +511,43 @@ function onColorGradeSlider(op: any, field: string, value: number) {
   padding: 1px 4px !important;
   font-size: 10px !important;
   flex-shrink: 0;
+}
+
+/* ── Audio compressor panel ── */
+.ac-panel {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(229,192,123,0.06);
+  border: 1px solid rgba(229,192,123,0.2);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ac-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.ac-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: #e5c07b;
+  text-transform: uppercase;
+}
+.ac-slider::-webkit-slider-thumb {
+  background: #e5c07b !important;
+}
+.ac-slider::-moz-range-thumb {
+  background: #e5c07b !important;
+}
+.ac-unit {
+  font-size: 9px;
+  color: var(--sidebar-fg-dim);
+  width: 16px;
+  flex-shrink: 0;
+  text-align: left;
 }
 </style>

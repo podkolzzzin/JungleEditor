@@ -578,8 +578,9 @@ export async function importPickedFiles(
         // Write file data into project media/ folder
         const destHandle = await mediaDir.getFileHandle(file.name, { create: true })
         const writable = await destHandle.createWritable()
-        // Stream the file contents (works for large video files)
-        await writable.write(await file.arrayBuffer())
+        // Write the file as a Blob — the browser streams it internally without
+        // loading the entire file into an ArrayBuffer in memory.
+        await writable.write(file)
         await writable.close()
         finalHandle = destHandle
         console.log(`${mode === 'copy' ? 'Copied' : 'Moved'} "${file.name}" into project media/`)

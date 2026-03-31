@@ -90,7 +90,7 @@ export interface TimelineClip {
 
 /** A transformation/operation applied to a clip */
 export interface TimelineOperation {
-  type: 'cut' | 'remove_segment' | 'speed' | 'fade_in' | 'fade_out' | 'mute' | 'color_grade'
+  type: 'cut' | 'remove_segment' | 'speed' | 'fade_in' | 'fade_out' | 'mute' | 'color_grade' | 'audio_compressor'
   /** For cut: the time point to split at (seconds) */
   at?: number
   /** For remove_segment: start of removed range (seconds, relative to clip) */
@@ -122,6 +122,19 @@ export interface TimelineOperation {
   bGain?: number
   /** Name of an applied built-in color profile (optional) */
   profileName?: string
+  // ── Audio compressor fields (for type: 'audio_compressor') ──
+  /** Threshold in dB at which compression begins (-100 to 0, default -24) */
+  threshold?: number
+  /** Amount of dB change for input above threshold (1 to 20, default 4) */
+  ratio?: number
+  /** Time in seconds to reduce gain (0 to 1, default 0.003) */
+  attack?: number
+  /** Time in seconds to increase gain back (0 to 1, default 0.25) */
+  release?: number
+  /** Smoothing of the knee transition in dB (0 to 40, default 30) */
+  knee?: number
+  /** Makeup gain in dB to compensate for volume reduction (0 to 24, default 0) */
+  makeupGain?: number
 }
 
 /** A named track containing ordered clips */

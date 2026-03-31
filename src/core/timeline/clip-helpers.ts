@@ -5,6 +5,7 @@
 
 import type { TimelineClip, TimelineTrack } from '../types'
 import { getClipColorGrade, type ColorGradeParams } from '../color'
+import { getClipAudioCompressor, type AudioCompressorParams } from './audio-compressor'
 
 // ── Speed / duration helpers ──
 
@@ -71,6 +72,8 @@ export interface ActiveClipInfo {
   trackVolume: number
   /** Color grade parameters for this clip (optional — absent when no color_grade op) */
   colorGrade?: ColorGradeParams
+  /** Audio compressor parameters for this clip (optional — absent when no audio_compressor op) */
+  audioCompressor?: AudioCompressorParams
 }
 
 /**
@@ -96,9 +99,43 @@ export function findActiveClip(
         const trackVolume = track.volume ?? 1
         const hasColorGrade = clip.operations?.some(op => op.type === 'color_grade') ?? false
         const colorGrade = hasColorGrade ? getClipColorGrade(clip) : undefined
-        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, trackVolume, colorGrade }
+        const audioCompressor = getClipAudioCompressor(clip) ?? undefined
+        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, trackVolume, colorGrade, audioCompressor }
       }
     }
   }
   return null
+}
+
+/**
+ * Find ALL active clips at a given global timeline time.
+ * Returns array sorted by track index (0 = bottom layer, rendered first).
+ * Used by the multi-layer compositor to render all visible layers.
+ */
+export function findAllActiveClips(
+  tracks: TimelineTrack[],
+  time: number,
+): ActiveClipInfo[] {
+  const result: ActiveClipInfo[] = []
+  for (let ti = 0; ti < tracks.length; ti++) {
+    const track = tracks[ti]
+    for (let ci = 0; ci < track.clips.length; ci++) {
+      const clip = track.clips[ci]
+      const clipOffset = clip.offset ?? 0
+      const speed = getClipSpeed(clip)
+      const effectiveDuration = getClipEffectiveDuration(clip)
+      if (time >= clipOffset && time < clipOffset + effectiveDuration) {
+        const localTime = time - clipOffset
+        const sourceTime = clip.in + localTime * speed
+        const opacity = computeClipOpacity(clip, localTime)
+        const muted = isClipMuted(clip)
+        const trackVolume = track.volume ?? 1
+        const hasColorGrade = clip.operations?.some(op => op.type === 'color_grade') ?? false
+        const colorGrade = hasColorGrade ? getClipColorGrade(clip) : undefined
+        const audioCompressor = getClipAudioCompressor(clip) ?? undefined
+        result.push({ clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, trackVolume, colorGrade, audioCompressor })
+      }
+    }
+  }
+  return result
 }

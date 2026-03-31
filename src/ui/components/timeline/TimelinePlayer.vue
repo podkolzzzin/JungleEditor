@@ -1,13 +1,22 @@
 <script setup lang="ts">
 /**
- * TimelinePlayer — Custom video player that renders via WebGPU compositor.
- * Shows the composited output at the current global playhead position.
- * Handles playback, seeking, and applies timeline operations (speed, fades, mute).
+ * TimelinePlayer — Multi-layer WebGPU video compositor player.
+ *
+ * Renders ALL active clips at the current playhead as composited layers.
+ * Uses the WebGPU multi-layer compositor for hardware-accelerated rendering
+ * with per-layer color grading, crop, and opacity (fade in/out).
+ *
+ * Key improvements over the previous implementation:
+ * - Multi-layer rendering: shows all overlapping clips across tracks
+ * - No Canvas2D fallback: WebGPU-only for maximum performance
+ * - Cleaner video source management with Map-based pool
+ * - Simplified seeking: tolerant thresholds, no retry/poll hacks
+ * - Audio mixing: plays audio from the topmost non-muted clip
  */
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import type { TimelineDocument } from '../../../core/types'
 import { findNode, resolveFileUrl } from '../../store'
-import { TimelineCompositor, findActiveClip } from './compositor'
+import { TimelineCompositor, findAllActiveClips, type ActiveClipInfo } from './compositor'
 import { DEFAULT_COLOR_GRADE } from '../../../core/color'
 import { formatTimeFull } from './useTimeline'
 
@@ -26,30 +35,25 @@ const emit = defineEmits<{
 // ── Canvas & Compositor ──
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
+const containerEl = ref<HTMLElement | null>(null)
 const compositor = new TimelineCompositor()
-const gpuMode = ref(false)
 
-// ── Video source management ──
-
+// ── Video source pool ──
+// Keyed by sourceId → reusable HTMLVideoElement
 const videoSources = new Map<string, HTMLVideoElement>()
-const sourcesLoading = new Set<string>()
-let currentSourceId: string | null = null
+const loadingSourceIds = new Set<string>()
 
-// ── Volume ──
+// ── Audio state ──
 
 const volume = ref(0.8)
 const muted = ref(false)
-/** Volume before muting, used to restore on unmute */
 let volumeBeforeMute = 0.8
 
 function onVolumeInput(e: Event) {
   const val = Number((e.target as HTMLInputElement).value)
   volume.value = val
-  if (val > 0 && muted.value) {
-    muted.value = false
-  } else if (val === 0) {
-    muted.value = true
-  }
+  if (val > 0 && muted.value) muted.value = false
+  else if (val === 0) muted.value = true
 }
 
 function toggleMute() {
@@ -63,29 +67,28 @@ function toggleMute() {
   }
 }
 
-// ── Playback RAF ──
+// ── Playback engine ──
 
 let rafId: number | null = null
 let lastFrameTime = 0
-/** Local authoritative playback time — avoids async prop round-trip lag */
+/** Local authoritative playback time — avoids Vue prop round-trip lag */
 let playTime = 0
+/** Set of sourceIds that have audio currently unmuted */
+let currentAudioSourceId: string | null = null
 
 // ── Canvas sizing ──
 
 const canvasWidth = ref(640)
 const canvasHeight = ref(360)
-const containerEl = ref<HTMLElement | null>(null)
 
 function updateCanvasSize() {
   if (!containerEl.value || !canvasEl.value) return
   const rect = containerEl.value.getBoundingClientRect()
-  // Use 16:9 aspect ratio within the container
   const w = Math.floor(rect.width)
   const h = Math.floor(Math.min(rect.height, w * 9 / 16))
   const cssW = Math.max(320, w)
   const cssH = Math.max(180, h)
 
-  // HiDPI: backing buffer at device resolution, CSS at logical pixels
   const dpr = window.devicePixelRatio || 1
   canvasWidth.value = Math.round(cssW * dpr)
   canvasHeight.value = Math.round(cssH * dpr)
@@ -95,23 +98,19 @@ function updateCanvasSize() {
   canvasEl.value.style.height = cssH + 'px'
 }
 
-// ── Source video management ──
+// ── Video source management ──
 
 async function ensureVideoSource(sourceId: string): Promise<HTMLVideoElement | null> {
-  if (videoSources.has(sourceId)) {
-    return videoSources.get(sourceId)!
-  }
+  if (videoSources.has(sourceId)) return videoSources.get(sourceId)!
+  if (loadingSourceIds.has(sourceId)) return null
 
-  if (sourcesLoading.has(sourceId)) return null
-  sourcesLoading.add(sourceId)
+  loadingSourceIds.add(sourceId)
 
   const node = findNode(sourceId)
-  if (!node) { sourcesLoading.delete(sourceId); return null }
+  if (!node) { loadingSourceIds.delete(sourceId); return null }
 
-  if (!node.url && node.handle) {
-    await resolveFileUrl(node)
-  }
-  if (!node.url) { sourcesLoading.delete(sourceId); return null }
+  if (!node.url && node.handle) await resolveFileUrl(node)
+  if (!node.url) { loadingSourceIds.delete(sourceId); return null }
 
   const video = document.createElement('video')
   video.crossOrigin = 'anonymous'
@@ -120,169 +119,166 @@ async function ensureVideoSource(sourceId: string): Promise<HTMLVideoElement | n
   video.playsInline = true
   video.src = node.url
 
-  // Re-render when the video finishes seeking (handles async readyState recovery)
+  // Re-render when seeking completes (ensures scrubbing shows correct frame)
   video.addEventListener('seeked', () => {
     if (!props.isPlaying) renderCurrentFrame()
   })
 
   await new Promise<void>((resolve) => {
-    const onReady = () => { cleanup(); resolve() }
-    const onError = () => { cleanup(); resolve() }
     const cleanup = () => {
       video.removeEventListener('loadeddata', onReady)
       video.removeEventListener('error', onError)
     }
+    const onReady = () => { cleanup(); resolve() }
+    const onError = () => { cleanup(); resolve() }
     video.addEventListener('loadeddata', onReady)
     video.addEventListener('error', onError)
     video.load()
   })
 
   videoSources.set(sourceId, video)
-  sourcesLoading.delete(sourceId)
+  loadingSourceIds.delete(sourceId)
   return video
 }
 
-function getVideoSync(sourceId: string): HTMLVideoElement | null {
-  return videoSources.get(sourceId) ?? null
-}
-
-// ── Preload all sources in the document ──
-
+/** Preload all video sources referenced in the current document */
 async function preloadSources() {
   if (!props.doc) return
   const ids = new Set<string>()
   for (const track of props.doc.tracks) {
-    for (const clip of track.clips) {
-      ids.add(clip.sourceId)
-    }
+    for (const clip of track.clips) ids.add(clip.sourceId)
   }
   await Promise.all([...ids].map(id => ensureVideoSource(id)))
-  // After all sources are loaded, render so the player shows the first frame
-  // (the initial renderCurrentFrame call may have run before loading finished).
   if (!props.isPlaying) renderCurrentFrame()
 }
 
-// ── Rendering ──
-
-let pendingRetry: number | null = null
-
-function cancelRetry() {
-  if (pendingRetry !== null) {
-    clearTimeout(pendingRetry)
-    pendingRetry = null
-  }
-}
-
-/** Schedule a single retry after a short delay (only when paused — during playback RAF handles it) */
-function scheduleRetry() {
-  if (props.isPlaying) return // RAF loop will retry on next tick
-  if (pendingRetry !== null) return
-  pendingRetry = window.setTimeout(() => {
-    pendingRetry = null
-    renderCurrentFrame()
-  }, 50)
-}
+// ── Multi-layer rendering ──
 
 /**
- * Render the frame at the given time (or current playTime).
- * Uses `playTime` as the authoritative time during playback to avoid
- * the one-frame lag from async prop round-trips.
+ * Render the composited frame at the current playTime.
+ * Finds ALL active clips, builds layer descriptors, and submits to the compositor.
  */
 function renderCurrentFrame() {
   if (!props.doc || !canvasEl.value || !compositor.initialized) return
 
-  // Use local playTime — always up-to-date, not subject to Vue prop batching
   const time = playTime
+  const activeClips = findAllActiveClips(props.doc.tracks, time)
 
-  const info = findActiveClip(props.doc.tracks, time)
-
-  if (!info) {
+  if (activeClips.length === 0) {
     compositor.renderBlack()
-    muteAllVideos()
-    currentSourceId = null
+    silenceAllVideos()
+    currentAudioSourceId = null
     return
   }
 
-  const video = getVideoSync(info.clip.sourceId)
-  if (!video) {
-    // Trigger async load, render black for now, and poll via macrotask
-    // (NOT via .then() — that creates a microtask loop when the source is
-    //  already being loaded by preloadSources, because ensureVideoSource
-    //  returns null immediately, and the resolved Promise's .then() fires
-    //  as a microtask before the actual load I/O can complete.)
-    ensureVideoSource(info.clip.sourceId)
+  // Build layer descriptors for all active clips that have ready video elements
+  const layers: { video: HTMLVideoElement; info: ActiveClipInfo }[] = []
+
+  for (const info of activeClips) {
+    const video = videoSources.get(info.clip.sourceId)
+    if (!video) {
+      // Trigger async load — will render on next frame once loaded
+      ensureVideoSource(info.clip.sourceId)
+      continue
+    }
+
+    // Seek to the correct source time
+    // Use a generous tolerance (0.08s ≈ 2 frames at 24fps) to prevent seek storms
+    const seekDelta = Math.abs(video.currentTime - info.sourceTime)
+    if (!video.seeking && seekDelta > 0.08) {
+      if (!props.isPlaying || seekDelta > 0.15) {
+        video.currentTime = info.sourceTime
+      }
+    }
+
+    // Set playback rate for speed operations
+    video.playbackRate = info.speed
+
+    // Only include in render if the video has decoded frame data
+    if (video.readyState >= 2) {
+      layers.push({ video, info })
+    }
+  }
+
+  // Manage audio: pick the topmost non-muted, non-zero-volume clip for audio output
+  manageAudio(activeClips)
+
+  if (layers.length > 0) {
+    compositor.renderLayers(layers.map(({ video, info }) => ({
+      video,
+      opacity: info.opacity,
+      colorGrade: info.colorGrade ?? DEFAULT_COLOR_GRADE,
+    })))
+  } else {
+    // All videos still loading — show black
     compositor.renderBlack()
-    scheduleRetry()
-    return
-  }
-
-  // Seek to correct source time — skip if already seeking to avoid seek storm.
-  // Tolerance is 0.05 s (≈1.5 frames at 30 fps) to prevent seeked→render→re-seek
-  // loops caused by the browser landing on the nearest frame boundary.
-  const seekDelta = Math.abs(video.currentTime - info.sourceTime)
-  if (!video.seeking && seekDelta > 0.05) {
-    if (!props.isPlaying || seekDelta > 0.15) {
-      video.currentTime = info.sourceTime
-    }
-  }
-
-  // Audio & playback management
-  video.playbackRate = info.speed
-
-  if (currentSourceId !== info.clip.sourceId) {
-    muteOtherVideos(info.clip.sourceId)
-    currentSourceId = info.clip.sourceId
-  }
-
-  if (props.isPlaying) {
-    // Ensure the active video element is actually playing (it may have been
-    // paused by muteOtherVideos, stopPlayback, or a doc mutation from split)
-    video.muted = info.muted || muted.value
-    video.volume = muted.value ? 0 : volume.value * info.trackVolume
-    if (video.paused) {
-      video.play().catch(() => {})
-    }
-  } else {
-    video.muted = true
-  }
-
-  // Render frame — retry if the video frame isn't ready yet
-  if (video.readyState >= 2) {
-    const colorGrade = info.colorGrade ?? DEFAULT_COLOR_GRADE
-    const ok = compositor.renderFrame(video, info.opacity, colorGrade)
-    if (!ok) {
-      scheduleRetry()
-    }
-  } else {
-    scheduleRetry()
   }
 }
 
-function muteAllVideos() {
+/** Manage audio output: only the topmost non-muted clip gets audio */
+function manageAudio(activeClips: ActiveClipInfo[]) {
+  // Find the topmost (first in array, since they're sorted by track) non-muted clip
+  let audioClip: ActiveClipInfo | null = null
+  for (const info of activeClips) {
+    if (!info.muted) audioClip = info
+  }
+
+  const audioSourceId = audioClip?.clip.sourceId ?? null
+
+  // Silence videos that should not produce audio
+  for (const [id, video] of videoSources) {
+    if (id !== audioSourceId) {
+      video.muted = true
+      if (props.isPlaying && activeClips.some(c => c.clip.sourceId === id)) {
+        // Keep active clips playing (for video frames) but muted
+        if (video.paused) video.play().catch(() => {})
+      } else if (!activeClips.some(c => c.clip.sourceId === id)) {
+        video.pause()
+      }
+    }
+  }
+
+  // Configure the audio source
+  if (audioClip && audioSourceId) {
+    const video = videoSources.get(audioSourceId)
+    if (video) {
+      video.muted = muted.value
+      video.volume = muted.value ? 0 : volume.value * audioClip.trackVolume
+      if (props.isPlaying && video.paused) {
+        video.play().catch(() => {})
+      }
+    }
+  }
+
+  // Ensure all active playing clips have their video elements playing (for frame import)
+  if (props.isPlaying) {
+    for (const info of activeClips) {
+      const video = videoSources.get(info.clip.sourceId)
+      if (video && video.paused) {
+        video.play().catch(() => {})
+      }
+    }
+  }
+
+  currentAudioSourceId = audioSourceId
+}
+
+function silenceAllVideos() {
   for (const v of videoSources.values()) {
     v.muted = true
     v.pause()
   }
 }
 
-function muteOtherVideos(activeId: string) {
-  for (const [id, v] of videoSources) {
-    if (id !== activeId) {
-      v.muted = true
-      v.pause()
-    }
-  }
-}
-
-// ── Playback engine ──
+// ── Playback loop ──
 
 function startPlayback() {
   lastFrameTime = performance.now()
   playTime = props.globalPlayhead
-  tickPlayback()
+  tick()
 }
 
-function tickPlayback() {
+function tick() {
   const now = performance.now()
   const delta = (now - lastFrameTime) / 1000
   lastFrameTime = now
@@ -301,7 +297,7 @@ function tickPlayback() {
   renderCurrentFrame()
 
   if (props.isPlaying) {
-    rafId = requestAnimationFrame(tickPlayback)
+    rafId = requestAnimationFrame(tick)
   }
 }
 
@@ -318,26 +314,39 @@ function stopPlayback() {
 // ── Watchers ──
 
 watch(() => props.isPlaying, (playing) => {
-  if (playing) {
-    startPlayback()
-  } else {
-    stopPlayback()
-  }
+  if (playing) startPlayback()
+  else stopPlayback()
 })
 
-// Seek when not playing (user drags playhead or clicks ruler)
 watch(() => props.globalPlayhead, (newVal) => {
   playTime = newVal
-  if (!props.isPlaying) {
-    renderCurrentFrame()
-  }
+  if (!props.isPlaying) renderCurrentFrame()
 })
 
-// Preload sources when doc changes
-watch(() => props.doc, () => {
+// Watch for new/changed source IDs — only preload when the set of sources changes
+// (avoids the perf cost of a deep watcher that fires on every nested mutation)
+watch(() => {
+  if (!props.doc) return ''
+  const ids: string[] = []
+  for (const track of props.doc.tracks) {
+    for (const clip of track.clips) ids.push(clip.sourceId)
+  }
+  return ids.sort().join(',')
+}, () => {
   preloadSources()
+})
+
+// Watch for structural clip changes that affect rendering at the current playhead
+// (clip add/remove/reposition, in/out changes). Uses a fingerprint string so Vue
+// only triggers when something actually changed.
+watch(() => {
+  if (!props.doc) return ''
+  return props.doc.tracks.map((t, ti) =>
+    t.clips.map((c, ci) => `${ti}:${ci}:${c.sourceId}:${c.in}:${c.out}:${c.offset ?? 0}`).join('|')
+  ).join(';')
+}, () => {
   nextTick(() => renderCurrentFrame())
-}, { deep: true })
+})
 
 // ── Transport controls ──
 
@@ -346,8 +355,7 @@ function togglePlay() {
 }
 
 function onSeekInput(e: Event) {
-  const value = Number((e.target as HTMLInputElement).value)
-  emit('update:globalPlayhead', value)
+  emit('update:globalPlayhead', Number((e.target as HTMLInputElement).value))
 }
 
 function skipBack() {
@@ -370,27 +378,31 @@ function goToEnd() {
 
 let resizeObserver: ResizeObserver | null = null
 
+const gpuError = ref<string | null>(null)
+
 onMounted(async () => {
   if (canvasEl.value) {
     updateCanvasSize()
-    await compositor.init(canvasEl.value)
-    gpuMode.value = compositor.useWebGPU
+    try {
+      await compositor.init(canvasEl.value)
+    } catch (e) {
+      gpuError.value = e instanceof Error ? e.message : 'WebGPU init failed'
+      console.warn('[TimelinePlayer] WebGPU unavailable:', gpuError.value)
+      return
+    }
     await preloadSources()
     renderCurrentFrame()
   }
 
-  // Use ResizeObserver for responsive canvas sizing (handles sidebar toggle, panel resize, etc.)
   if (containerEl.value) {
-    let lastObservedW = 0
-    let lastObservedH = 0
+    let lastW = 0, lastH = 0
     resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
       const { width, height } = entry.contentRect
-      // Guard: skip if dimensions haven't actually changed (prevents layout thrashing loop)
-      if (Math.abs(width - lastObservedW) < 1 && Math.abs(height - lastObservedH) < 1) return
-      lastObservedW = width
-      lastObservedH = height
+      if (Math.abs(width - lastW) < 1 && Math.abs(height - lastH) < 1) return
+      lastW = width
+      lastH = height
       updateCanvasSize()
       if (!props.isPlaying) renderCurrentFrame()
     })
@@ -401,7 +413,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopPlayback()
-  cancelRetry()
   compositor.destroy()
   resizeObserver?.disconnect()
   resizeObserver = null
@@ -413,7 +424,7 @@ onBeforeUnmount(() => {
     video.load()
   }
   videoSources.clear()
-  sourcesLoading.clear()
+  loadingSourceIds.clear()
 })
 </script>
 
@@ -421,11 +432,11 @@ onBeforeUnmount(() => {
   <div class="player-panel">
     <!-- Viewport -->
     <div class="player-viewport" ref="containerEl">
-      <canvas
-        ref="canvasEl"
-        class="player-canvas"
-      />
-      <div v-if="!doc?.tracks.length" class="player-empty">
+      <canvas ref="canvasEl" class="player-canvas" />
+      <div v-if="gpuError" class="player-empty">
+        <p style="color: #f44;">{{ gpuError }}</p>
+      </div>
+      <div v-else-if="!doc?.tracks.length" class="player-empty">
         <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
           <path d="M18 14v20l16-10-16-10z" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
@@ -513,9 +524,8 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="transport-info">
-        <span class="gpu-badge" :class="{ fallback: !gpuMode }" :title="gpuMode ? 'WebGPU accelerated' : 'Canvas2D fallback'">
-          {{ gpuMode ? 'GPU' : '2D' }}
-        </span>
+        <span v-if="!gpuError" class="gpu-badge" title="WebGPU accelerated">GPU</span>
+        <span v-else class="gpu-badge" style="background:rgba(255,60,60,0.2);color:#f44" title="WebGPU unavailable">NO GPU</span>
       </div>
     </div>
   </div>
@@ -735,10 +745,5 @@ onBeforeUnmount(() => {
   background: rgba(0,180,80,0.2);
   color: #0b4;
   user-select: none;
-}
-
-.gpu-badge.fallback {
-  background: rgba(200,120,0,0.2);
-  color: #c87800;
 }
 </style>

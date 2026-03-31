@@ -109,20 +109,20 @@ export function useTimeline(paneIdRef?: Ref<string>) {
     return (clip.offset ?? 0) * pixelsPerSecond.value
   }
 
-  function totalDuration(): number {
+  const totalDuration = computed(() => {
     if (!doc.value) return 0
     return computeTotalDuration(doc.value)
-  }
+  })
 
-  function timelineWidth(): number {
-    return Math.max(600, totalDuration() * pixelsPerSecond.value + 200)
-  }
+  const timelineWidth = computed(() => {
+    return Math.max(600, totalDuration.value * pixelsPerSecond.value + 200)
+  })
 
   // ── Ruler ──
 
-  function rulerMarks(): { pos: number; label: string }[] {
+  const rulerMarks = computed(() => {
     const marks: { pos: number; label: string }[] = []
-    const width = timelineWidth()
+    const width = timelineWidth.value
     const pps = pixelsPerSecond.value
     let step: number
     if (pps >= 80) step = 1
@@ -134,7 +134,7 @@ export function useTimeline(paneIdRef?: Ref<string>) {
       marks.push({ pos: t * pps, label: formatTime(t) })
     }
     return marks
-  }
+  })
 
   // ── Track operations ──
 
@@ -369,7 +369,7 @@ export function useTimeline(paneIdRef?: Ref<string>) {
   }
 
   function seekTo(time: number) {
-    globalPlayhead.value = Math.max(0, Math.min(time, totalDuration()))
+    globalPlayhead.value = Math.max(0, Math.min(time, totalDuration.value))
   }
 
   // ── Edge trim handles ──
