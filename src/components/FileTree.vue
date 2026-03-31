@@ -1,15 +1,66 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { fileTree, addFiles, addFolder } from '../store'
+import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder } from '../store'
 import FileTreeNode from './FileTreeNode.vue'
 
 const isDragging = ref(false)
-const fileInput = ref<HTMLInputElement | null>(null)
 
-function onDrop(e: DragEvent) {
+async function onDrop(e: DragEvent) {
   isDragging.value = false
-  if (e.dataTransfer?.files.length) {
-    addFiles(e.dataTransfer.files)
+  if (!e.dataTransfer?.items.length) return
+
+  // Try to get FileSystemFileHandles from the drop (Chromium)
+  const handles: FileSystemFileHandle[] = []
+  for (const item of Array.from(e.dataTransfer.items)) {
+    if (item.kind === 'file') {
+      const handle = await (item as any).getAsFileSystemHandle?.()
+      if (handle && handle.kind === 'file') {
+        handles.push(handle)
+      }
+    }
+  }
+
+  if (handles.length > 0) {
+    // Use store's addVideoFiles-like logic with the handles
+    const { sourcesDir, fileCount } = await import('../store')
+    const { writeSourceFile } = await import('../project')
+    const { saveFileHandle } = await import('../persistence')
+    const targetFolder = getSelectedFolder()
+    const targetPath = targetFolder?.path || ''
+    const targetChildren = targetFolder?.children ?? fileTree
+
+    for (const handle of handles) {
+      const file = await handle.getFile()
+      if (!file.type.startsWith('video/')) continue
+      const sourceId = crypto.randomUUID()
+      const meta = {
+        id: sourceId,
+        name: file.name,
+        size: file.size,
+        type: file.type || 'video/mp4',
+        added: new Date().toISOString(),
+        path: targetPath,
+      }
+      if (sourcesDir.value) {
+        await writeSourceFile(sourcesDir.value, meta)
+      }
+      await saveFileHandle(sourceId, handle)
+      const url = URL.createObjectURL(file)
+      targetChildren.push({
+        id: sourceId,
+        name: file.name,
+        type: 'file',
+        sourceId,
+        handle,
+        url,
+        size: file.size,
+        mimeType: meta.type,
+        added: meta.added,
+        path: targetPath,
+        permissionState: 'granted',
+      })
+      fileCount.value++
+    }
   }
 }
 
@@ -21,22 +72,14 @@ function onDragLeave() {
   isDragging.value = false
 }
 
-function triggerFileInput() {
-  fileInput.value?.click()
+function onAddFiles() {
+  addVideoFiles(getSelectedFolder())
 }
 
-function onFileSelected(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (input.files?.length) {
-    addFiles(input.files)
-    input.value = ''
-  }
-}
-
-function createFolder() {
+function onCreateFolder() {
   const name = prompt('Folder name:')
   if (name?.trim()) {
-    addFolder(name.trim())
+    addFolder(name.trim(), getSelectedFolder())
   }
 }
 </script>
@@ -46,27 +89,18 @@ function createFolder() {
     <div class="panel-header">
       <span class="panel-title">EXPLORER</span>
       <div class="panel-actions">
-        <button class="panel-btn" @click="triggerFileInput" title="Add Files">
+        <button class="panel-btn" @click="onAddFiles" title="Add Video Files">
           <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
             <path d="M14 7H9V2H7v5H2v2h5v5h2V9h5z"/>
           </svg>
         </button>
-        <button class="panel-btn" @click="createFolder" title="New Folder">
+        <button class="panel-btn" @click="onCreateFolder" title="New Folder">
           <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
             <path d="M14.5 3H7.71l-.85-1.35A.5.5 0 006.5 1.5h-5A1.5 1.5 0 000 3v10a1.5 1.5 0 001.5 1.5h13A1.5 1.5 0 0016 13V4.5A1.5 1.5 0 0014.5 3zM9 11H7V9H5V7h2V5h2v2h2v2H9v2z"/>
           </svg>
         </button>
       </div>
     </div>
-
-    <input
-      ref="fileInput"
-      type="file"
-      accept="video/*"
-      multiple
-      style="display: none"
-      @change="onFileSelected"
-    />
 
     <div
       class="tree-container"
@@ -77,12 +111,16 @@ function createFolder() {
     >
       <FileTreeNode v-if="fileTree.length" :nodes="fileTree" />
 
-      <div v-else class="empty-state" @click="triggerFileInput">
+      <div v-else class="empty-state" @click="onAddFiles">
         <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
           <path d="M24 8v32M8 24h32" stroke-linecap="round"/>
         </svg>
         <p>Drop video files here<br/>or click to browse</p>
       </div>
+    </div>
+
+    <div class="panel-footer">
+      <button class="close-project-btn" @click="closeProject">Close Project</button>
     </div>
   </div>
 </template>
@@ -158,5 +196,23 @@ function createFolder() {
 }
 .empty-state p {
   line-height: 1.5;
+}
+.panel-footer {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+}
+.close-project-btn {
+  background: none;
+  border: none;
+  color: var(--sidebar-fg-dim);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 0;
+  opacity: 0.6;
+}
+.close-project-btn:hover {
+  opacity: 1;
+  color: var(--sidebar-fg);
 }
 </style>

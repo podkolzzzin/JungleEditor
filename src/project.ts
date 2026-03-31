@@ -156,14 +156,15 @@ export async function readAllSources(
 
   for await (const entry of sourcesDir.values()) {
     if (entry.kind !== 'file') continue
+    const fileHandle = entry as FileSystemFileHandle
 
     if (entry.name.endsWith('.source')) {
-      const file = await entry.getFile()
+      const file = await fileHandle.getFile()
       const text = await file.text()
       const meta = parseSource(text)
       if (meta) sources.push(meta)
     } else if (entry.name.endsWith('.folder')) {
-      const file = await entry.getFile()
+      const file = await fileHandle.getFile()
       const text = await file.text()
       const parsed = parseFolder(text)
       if (parsed) {

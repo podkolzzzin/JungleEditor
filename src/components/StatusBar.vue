@@ -1,13 +1,14 @@
 <script setup lang="ts">
+import { projectName, fileCount } from '../store'
 </script>
 
 <template>
   <div class="status-bar">
     <div class="status-left">
-      <span class="status-item">Jungle Editor</span>
+      <span class="status-item">{{ projectName }}</span>
     </div>
     <div class="status-right">
-      <span class="status-item">TypeScript</span>
+      <span class="status-item">{{ fileCount }} source{{ fileCount === 1 ? '' : 's' }}</span>
     </div>
   </div>
 </template>

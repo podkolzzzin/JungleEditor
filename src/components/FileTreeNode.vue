@@ -5,7 +5,7 @@ import { selectFile, toggleFolder, removeNode, activeFile } from '../store'
 defineProps<{ nodes: FileNode[]; depth?: number }>()
 
 function isVideo(name: string): boolean {
-  return /\.(mp4|webm|mov|avi|mkv|ogg)$/i.test(name)
+  return /\.(mp4|webm|mov|avi|mkv|ogg|flv|wmv|m4v|ts)$/i.test(name)
 }
 </script>
 
@@ -35,7 +35,11 @@ function isVideo(name: string): boolean {
       <div
         v-else
         class="tree-item file"
-        :class="{ active: activeFile?.id === node.id }"
+        :class="{
+          active: activeFile?.id === node.id,
+          'needs-permission': !node.url && node.handle,
+          'no-handle': !node.url && !node.handle,
+        }"
         @click="selectFile(node)"
       >
         <span class="indent" :style="{ width: ((depth ?? 0) + 1) * 16 + 'px' }"></span>
@@ -44,6 +48,10 @@ function isVideo(name: string): boolean {
         </svg>
         <svg v-else class="icon" viewBox="0 0 16 16" fill="currentColor">
           <path d="M3.5 0h6.793a1 1 0 01.707.293l2.707 2.707a1 1 0 01.293.707V14.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 14.5v-13A1.5 1.5 0 013.5 0z"/>
+        </svg>
+        <!-- Lock indicator for files needing re-permission -->
+        <svg v-if="!node.url && node.handle" class="lock-badge" viewBox="0 0 16 16" fill="currentColor" width="8" height="8">
+          <path d="M11 7V5a3 3 0 00-6 0v2H4v7h8V7h-1zm-4-2a1 1 0 012 0v2H7V5z"/>
         </svg>
         <span class="label">{{ node.name }}</span>
         <button class="action-btn remove" @click.stop="removeNode(node.id)" title="Remove">×</button>
@@ -89,6 +97,13 @@ export default { name: 'FileTreeNode' }
   background: var(--list-active);
   color: #fff;
 }
+.tree-item.needs-permission {
+  opacity: 0.6;
+}
+.tree-item.no-handle {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
 .indent {
   flex-shrink: 0;
 }
@@ -115,6 +130,13 @@ export default { name: 'FileTreeNode' }
 }
 .folder .icon {
   color: #d19a66;
+}
+.lock-badge {
+  position: absolute;
+  left: calc(var(--depth, 0) * 16px + 26px);
+  bottom: 2px;
+  color: #e5c07b;
+  opacity: 0.8;
 }
 .label {
   white-space: nowrap;

@@ -21,7 +21,6 @@ import {
   deleteSourceFile,
   writeFolderMarker,
   deleteFolderMarker,
-  updateSourcePath,
 } from './project'
 
 // ── Reactive state ──
