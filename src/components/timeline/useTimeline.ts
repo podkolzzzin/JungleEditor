@@ -87,6 +87,13 @@ export function useTimeline() {
     startX: number; startIn: number; startOut: number; startOffset: number
   } | null>(null)
 
+  // Track reorder drag
+  const trackDrag = ref<{
+    trackIndex: number
+    startY: number
+  } | null>(null)
+  const trackDragOverIndex = ref<number | null>(null)
+
   // ── Watchers ──
   watch(() => activeTimeline.value, () => {
     dirty.value = false
@@ -482,6 +489,55 @@ export function useTimeline() {
     window.removeEventListener('mouseup', onEdgeMouseUp)
   }
 
+  // ── Track reorder drag ──
+
+  function onTrackReorderStart(e: MouseEvent, trackIndex: number) {
+    if (e.button !== 0) return
+    if (!doc.value) return
+    trackDrag.value = { trackIndex, startY: e.clientY }
+    trackDragOverIndex.value = trackIndex
+    e.preventDefault()
+    window.addEventListener('mousemove', onTrackReorderMove)
+    window.addEventListener('mouseup', onTrackReorderEnd)
+  }
+
+  function onTrackReorderMove(e: MouseEvent) {
+    if (!trackDrag.value || !doc.value) return
+    const hoverTrack = getTrackIndexAtY(e.clientY)
+    if (hoverTrack !== null) {
+      trackDragOverIndex.value = hoverTrack
+    }
+  }
+
+  function onTrackReorderEnd() {
+    if (trackDrag.value && doc.value && trackDragOverIndex.value !== null) {
+      const from = trackDrag.value.trackIndex
+      const to = trackDragOverIndex.value
+      if (from !== to) {
+        const [track] = doc.value.tracks.splice(from, 1)
+        doc.value.tracks.splice(to, 0, track)
+
+        // Adjust selectedClip to follow the moved track
+        if (selectedClip.value) {
+          const sel = selectedClip.value.trackIndex
+          if (sel === from) {
+            selectedClip.value = { ...selectedClip.value, trackIndex: to }
+          } else if (from < to && sel > from && sel <= to) {
+            selectedClip.value = { ...selectedClip.value, trackIndex: sel - 1 }
+          } else if (from > to && sel >= to && sel < from) {
+            selectedClip.value = { ...selectedClip.value, trackIndex: sel + 1 }
+          }
+        }
+
+        markDirty()
+      }
+    }
+    trackDrag.value = null
+    trackDragOverIndex.value = null
+    window.removeEventListener('mousemove', onTrackReorderMove)
+    window.removeEventListener('mouseup', onTrackReorderEnd)
+  }
+
   // ── Inspector ──
 
   const inspectedClip = computed(() => {
@@ -515,6 +571,8 @@ export function useTimeline() {
     clipDrag,
     clipDragTargetTrack,
     edgeDrag,
+    trackDrag,
+    trackDragOverIndex,
 
     // Helpers
     clipWidth,
@@ -555,6 +613,9 @@ export function useTimeline() {
 
     // Edge trim
     onEdgeMouseDown,
+
+    // Track reorder
+    onTrackReorderStart,
 
     // Inspector
     inspectedClip,
