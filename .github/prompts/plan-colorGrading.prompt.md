@@ -3,6 +3,12 @@
 Full-featured color grading for JungleEditor, delivered in three incremental milestones.
 Every step is independently verifiable. WebGPU is the primary render path from day one.
 
+> **Architecture:** Follows the Core / UI separation. Pure data types and helpers go in
+> `src/core/`, WebGPU/Vue code stays in `src/ui/`.
+>
+> **Parallel work note:** This plan is designed to be implemented in parallel with
+> `plan-rendering.prompt.md`. See §Parallel Integration Contract at the bottom.
+
 **Core architecture:** The fragment shader currently does `color.rgb * opacity`. We expand
 the `Params` uniform buffer with color-grading floats and chain GPU math operations in
 the shader: sample → RGB gains → brightness → contrast → saturation → (LUT) → opacity.
@@ -18,7 +24,7 @@ the user can apply with one click.
 
 ### 1.1 Extend `TimelineOperation` type
 
-In [src/types.ts](src/types.ts):
+In [src/core/types.ts](src/core/types.ts):
 - Add `'color_grade'` to the `type` union
 - Add optional fields to `TimelineOperation`:
   ```
@@ -36,10 +42,11 @@ In [src/types.ts](src/types.ts):
 
 ### 1.2 Built-in color profiles
 
-Create `src/colorProfiles.ts`:
+Create `src/core/color/color-profiles.ts` — pure data, no browser/Vue deps:
 - Export a `ColorGradeParams` interface (the numeric fields above, all required, with defaults)
 - Export a `DEFAULT_COLOR_GRADE: ColorGradeParams` constant (all neutral values)
 - Export a `COLOR_PROFILES: Record<string, ColorGradeParams>` map with 8–10 presets:
+- Create `src/core/color/index.ts` — barrel re-export of all color module exports
 
 | Profile | Character |
 |---------|-----------|
@@ -58,16 +65,20 @@ Each profile is just a `ColorGradeParams` object — pure data, no logic.
 
 ### 1.3 Compositor helper functions
 
-In [src/components/timeline/compositor.ts](src/components/timeline/compositor.ts):
+Create `src/core/color/clip-color.ts` (pure function, no GPU dependency):
 - Add `getClipColorGrade(clip: TimelineClip): ColorGradeParams` — reads the first
   `color_grade` operation from `clip.operations`, resolves `profileName` into values,
   merges with `DEFAULT_COLOR_GRADE`, returns the result
-- Extend `ActiveClipInfo` with `colorGrade: ColorGradeParams`
+- Re-export from `src/core/color/index.ts`
+
+In [src/core/timeline/clip-helpers.ts](src/core/timeline/clip-helpers.ts):
+- Extend `ActiveClipInfo` with optional `colorGrade?: ColorGradeParams`
 - Update `findActiveClip()` to call `getClipColorGrade()` and populate the field
+  (the field is optional so that rendering code compiles without color grading)
 
 ### 1.4 Expand WebGPU shader & uniform buffer
 
-In [src/components/timeline/compositor.ts](src/components/timeline/compositor.ts):
+In [src/ui/components/timeline/compositor.ts](src/ui/components/timeline/compositor.ts):
 
 **Params buffer — grow from 16 bytes to 48 bytes (12 floats):**
 ```wgsl
@@ -129,7 +140,7 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
 
 ### 1.5 Update `renderFrame()` signature
 
-In [src/components/timeline/compositor.ts](src/components/timeline/compositor.ts):
+In [src/ui/components/timeline/compositor.ts](src/ui/components/timeline/compositor.ts):
 - Change `renderFrame(video, opacity)` → `renderFrame(video: HTMLVideoElement, opacity: number, cg: ColorGradeParams): boolean`
 - In `renderWebGPU`, write the full float array:
   `new Float32Array([opacity, cg.brightness, cg.contrast, cg.saturation, cg.exposure, cg.temperature, cg.tint, 0, cg.rGain, cg.gGain, cg.bGain, 0])`
@@ -139,14 +150,14 @@ In [src/components/timeline/compositor.ts](src/components/timeline/compositor.ts
 
 ### 1.6 Wire up in `TimelinePlayer.vue`
 
-In [src/components/timeline/TimelinePlayer.vue](src/components/timeline/TimelinePlayer.vue):
+In [src/ui/components/timeline/TimelinePlayer.vue](src/ui/components/timeline/TimelinePlayer.vue):
 - In `renderCurrentFrame()`, after `findActiveClip()`, read `info.colorGrade`
 - Pass to compositor: `compositor.renderFrame(video, info.opacity, info.colorGrade)`
 - When no clip is active, pass `DEFAULT_COLOR_GRADE`
 
 ### 1.7 ClipInspector — color grading UI
 
-In [src/components/timeline/ClipInspector.vue](src/components/timeline/ClipInspector.vue):
+In [src/ui/components/timeline/ClipInspector.vue](src/ui/components/timeline/ClipInspector.vue):
 
 **Add operation option:**
 - `<option value="color_grade">Color Grade</option>` in the `<select>`
@@ -184,19 +195,19 @@ two-way binding to the operation field, calling `markDirty()` on every `@input`.
 
 ### 1.8 ClipBlock indicator
 
-In [src/components/timeline/ClipBlock.vue](src/components/timeline/ClipBlock.vue):
+In [src/ui/components/timeline/ClipBlock.vue](src/ui/components/timeline/ClipBlock.vue):
 - Add CSS: `.clip-op-dot.color_grade { background: #61afef; }`
 - No template changes needed — the existing `v-for` renders dots by class name
 
 ### 1.9 Split behavior
 
-No changes needed in [src/components/timeline/useTimeline.ts](src/components/timeline/useTimeline.ts) —
+No changes needed in [src/ui/components/timeline/useTimeline.ts](src/ui/components/timeline/useTimeline.ts) —
 the split logic copies all operations except `fade_in`/`fade_out` to both halves.
 `color_grade` will naturally propagate to both clips.
 
 ### 1.10 Persistence
 
-No changes needed in [src/project.ts](src/project.ts) — `js-yaml` auto-serializes all
+No changes needed in [src/ui/project.ts](src/ui/project.ts) — `js-yaml` auto-serializes all
 fields on `TimelineOperation`. New numeric fields survive YAML round-trips without any
 parser changes.
 
@@ -225,7 +236,7 @@ for monitoring, and before/after split comparison.
 
 ### 2.1 Parse `.cube` files
 
-Create `src/lut.ts`:
+Create `src/core/color/lut.ts` (pure parser, no browser/Vue deps):
 - Export `LutData { title: string; size: number; data: Float32Array }` (`size³ × 4` RGBA)
 - Parse the Adobe `.cube` format: header lines (`TITLE`, `LUT_3D_SIZE`, `DOMAIN_MIN/MAX`),
   then `R G B` float triplets, one per line. Handle comments (`#`), blank lines.
@@ -234,13 +245,13 @@ Create `src/lut.ts`:
 
 ### 2.2 Extend `TimelineOperation` for LUT
 
-In [src/types.ts](src/types.ts):
+In [src/core/types.ts](src/core/types.ts):
 - Add `'lut'` to the `type` union
 - Add fields: `lutSourceId?: string`, `lutIntensity?: number` (0–1, default 1)
 
 ### 2.3 Import LUT files into the project
 
-In [src/store.ts](src/store.ts):
+In [src/ui/store.ts](src/ui/store.ts):
 - Add `addLutFiles()` (parallel to `addVideoFiles()`) — opens file picker for `.cube` files,
   copies content into `sources/` with a `.source` metadata file (`type: application/x-cube-lut`),
   adds to file tree
@@ -249,7 +260,7 @@ In [src/store.ts](src/store.ts):
 
 ### 2.4 Expand WebGPU pipeline for 3D LUT
 
-In [src/components/timeline/compositor.ts](src/components/timeline/compositor.ts):
+In [src/ui/components/timeline/compositor.ts](src/ui/components/timeline/compositor.ts):
 
 **New bind group layout (expand to 5 bindings):**
 - `@binding(3)`: `texture_3d<f32>` — 3D LUT texture
@@ -312,7 +323,7 @@ The bind group is already per-frame, so LUT texture inclusion is straightforward
 
 ### 2.7 Video scopes
 
-Create `src/components/timeline/VideoScopes.vue`:
+Create `src/ui/components/timeline/VideoScopes.vue`:
 - Reads the compositor canvas output via `drawImage()` onto an offscreen canvas, then
   `getImageData()` to analyze pixels
 - Three scope modes (tabs): **Waveform** (RGB parade), **Vectorscope**, **Histogram**
@@ -350,7 +361,7 @@ HSL qualifiers for secondary corrections, power windows for regional masking, an
 
 ### 3.1 CDL (Lift / Gamma / Gain) color wheels
 
-**Type changes** in [src/types.ts](src/types.ts):
+**Type changes** in [src/core/types.ts](src/core/types.ts):
 - Extend `color_grade` operation (or add `'cdl'` type) with:
   ```
   lift?: { r: number; g: number; b: number }
@@ -363,7 +374,7 @@ HSL qualifiers for secondary corrections, power windows for regional masking, an
 **Shader changes:** Add CDL uniform buffer (48 bytes: 4 × vec3f + padding). Apply CDL
 _before_ the basic brightness/contrast/saturation chain (matching DaVinci's primary → secondary order).
 
-**UI:** Create `src/components/timeline/ColorWheels.vue`:
+**UI:** Create `src/ui/components/timeline/ColorWheels.vue`:
 - Three circular wheel controls (Lift, Gamma, Gain) rendered on `<canvas>`
 - Color ring with a draggable center point → maps (x, y) to RGB channel bias
 - Master slider below each wheel
@@ -374,7 +385,7 @@ _before_ the basic brightness/contrast/saturation chain (matching DaVinci's prim
 
 Replace the single-operation model with a **node graph** per clip.
 
-**Data model** in [src/types.ts](src/types.ts):
+**Data model** in [src/core/types.ts](src/core/types.ts):
 - `TimelineColorNode { id, label, type: 'serial'|'parallel'|'layer', cdl?, basicGrade?, lut?, qualifier?, window?, enabled }`
 - Add `colorNodes?: TimelineColorNode[]` to `TimelineClip`
 
@@ -384,7 +395,7 @@ Replace the single-operation model with a **node graph** per clip.
 - First pass reads `texture_external` (video), subsequent read `texture_2d`
 - Requires a second pipeline variant for `texture_2d` input
 
-**UI:** Create `src/components/timeline/NodeGraph.vue`:
+**UI:** Create `src/ui/components/timeline/NodeGraph.vue`:
 - Visual boxes connected by wires (SVG or canvas)
 - Click node → shows its grade controls in the panel
 - Right-click: add/remove/reorder nodes
@@ -401,7 +412,7 @@ QualifierConfig { hueCenter, hueWidth, satLow, satHigh, lumLow, lumHigh, softnes
 **Shader:** Convert RGB → HSL, compute qualifier matte (0–1 with soft edges), apply node's
 correction only where matte > 0 via `mix(original, graded, matte)`.
 
-**UI:** Create `src/components/timeline/QualifierPanel.vue`:
+**UI:** Create `src/ui/components/timeline/QualifierPanel.vue`:
 - Hue ring picker (center + width arc), sat/lum range sliders
 - "Highlight" toggle shows matte as B&W overlay
 - Eyedropper: click preview to pick starting H/S/L
@@ -416,7 +427,7 @@ PowerWindowConfig { type: 'circle'|'rectangle'|'polygon'|'gradient', center, siz
 **Shader:** Compute window matte per pixel (smoothstep for softness), multiply with qualifier
 matte. Grade applies only within the combined mask.
 
-**UI:** Create `src/components/timeline/PowerWindow.vue`:
+**UI:** Create `src/ui/components/timeline/PowerWindow.vue`:
 - Shape tools as overlay on the preview canvas
 - On-screen drag handles for position, size, rotation, softness
 - Invert toggle
@@ -429,7 +440,7 @@ on each `TimelineColorNode`.
 **Compositor:** Evaluate keyframe tracks at clip-local time each frame, interpolate values
 (linear or Catmull-Rom), pass to shader.
 
-**UI:** `src/components/timeline/KeyframeEditor.vue` — diamond markers on a timeline strip,
+**UI:** `src/ui/components/timeline/KeyframeEditor.vue` — diamond markers on a timeline strip,
 click to add/remove at playhead.
 
 ### 3.6 LUT generation / export
@@ -437,7 +448,7 @@ click to add/remove at playhead.
 Bake the full node chain into a `.cube` file:
 - Sample the pipeline at 33³ grid points
 - Write standard `.cube` format
-- Save to the project's file tree via `src/lut.ts` `exportCubeFile()`
+- Save to the project's file tree via `src/core/color/lut.ts` `exportCubeFile()`
 
 ### Verification (Step 3)
 
@@ -473,50 +484,103 @@ Bake the full node chain into a `.cube` file:
 
 ## Files Changed per Step
 
-**Step 1 (8 files, 1 new):**
+**Step 1 (9 files, 2 new):**
 
 | File | Action |
 |------|--------|
-| `src/colorProfiles.ts` | **New** — `ColorGradeParams` interface, `DEFAULT_COLOR_GRADE`, `COLOR_PROFILES` map |
-| `src/types.ts` | Edit — add `'color_grade'` to `TimelineOperation.type`, add 9 optional numeric fields + `profileName` |
-| `src/components/timeline/compositor.ts` | Edit — expand `Params` struct to 48 bytes (12 floats), rewrite WGSL fragment shader with full color pipeline, update `renderFrame()` signature, add `getClipColorGrade()` helper, extend `ActiveClipInfo` |
-| `src/components/timeline/TimelinePlayer.vue` | Edit — extract `colorGrade` from `ActiveClipInfo`, pass to `compositor.renderFrame()` |
-| `src/components/timeline/ClipInspector.vue` | Edit — add `color_grade` option, profile `<select>`, 9 sliders, reset button |
-| `src/components/timeline/ClipBlock.vue` | Edit — `.clip-op-dot.color_grade` CSS |
-| `src/components/timeline/useTimeline.ts` | No changes needed (split already copies non-fade ops) |
+| `src/core/color/color-profiles.ts` | **New** — `ColorGradeParams` interface, `DEFAULT_COLOR_GRADE`, `COLOR_PROFILES` map |
+| `src/core/color/clip-color.ts` | **New** — `getClipColorGrade()` helper (pure function) |
+| `src/core/color/index.ts` | **New** — barrel re-export |
+| `src/core/types.ts` | Edit — add `'color_grade'` to `TimelineOperation.type`, add 9 optional numeric fields + `profileName` |
+| `src/core/timeline/clip-helpers.ts` | Edit — extend `ActiveClipInfo` with optional `colorGrade?: ColorGradeParams`, update `findActiveClip()` |
+| `src/ui/components/timeline/compositor.ts` | Edit — expand `Params` struct to 48 bytes (12 floats), rewrite WGSL fragment shader with full color pipeline, update `renderFrame()` signature |
+| `src/ui/components/timeline/TimelinePlayer.vue` | Edit — extract `colorGrade` from `ActiveClipInfo`, pass to `compositor.renderFrame()` |
+| `src/ui/components/timeline/ClipInspector.vue` | Edit — add `color_grade` option, profile `<select>`, 9 sliders, reset button |
+| `src/ui/components/timeline/ClipBlock.vue` | Edit — `.clip-op-dot.color_grade` CSS |
+| `src/ui/components/timeline/useTimeline.ts` | No changes needed (split already copies non-fade ops) |
 | `e2e/editor.spec.ts` | Edit — new test for color_grade operation |
 
 **Step 2 (7 files, 2 new):**
 
 | File | Action |
 |------|--------|
-| `src/lut.ts` | **New** — `.cube` parser, `LutData` type |
-| `src/components/timeline/VideoScopes.vue` | **New** — waveform/vectorscope/histogram |
-| `src/types.ts` | Edit — add `'lut'` type + `lutSourceId`, `lutIntensity` fields |
-| `src/store.ts` | Edit — `addLutFiles()`, `lutCache` map |
-| `src/components/timeline/compositor.ts` | Edit — 3D LUT texture, 5-binding layout, LUT shader sampling, `uploadLut()`/`clearLut()` |
-| `src/components/timeline/TimelinePlayer.vue` | Edit — LUT upload per frame, scopes integration |
-| `src/components/timeline/ClipInspector.vue` | Edit — LUT operation UI (source picker + intensity) |
+| `src/core/color/lut.ts` | **New** — `.cube` parser, `LutData` type (re-exported from `src/core/color/index.ts`) |
+| `src/ui/components/timeline/VideoScopes.vue` | **New** — waveform/vectorscope/histogram |
+| `src/core/types.ts` | Edit — add `'lut'` type + `lutSourceId`, `lutIntensity` fields |
+| `src/ui/store.ts` | Edit — `addLutFiles()`, `lutCache` map |
+| `src/ui/components/timeline/compositor.ts` | Edit — 3D LUT texture, 5-binding layout, LUT shader sampling, `uploadLut()`/`clearLut()` |
+| `src/ui/components/timeline/TimelinePlayer.vue` | Edit — LUT upload per frame, scopes integration |
+| `src/ui/components/timeline/ClipInspector.vue` | Edit — LUT operation UI (source picker + intensity) |
 
 **Step 3 (6 new files, 3 edits):**
 
 | File | Action |
 |------|--------|
-| `src/components/timeline/ColorWheels.vue` | **New** — CDL wheel controls |
-| `src/components/timeline/NodeGraph.vue` | **New** — node graph editor |
-| `src/components/timeline/QualifierPanel.vue` | **New** — HSL qualifier controls |
-| `src/components/timeline/PowerWindow.vue` | **New** — shape tools + overlay |
-| `src/components/timeline/KeyframeEditor.vue` | **New** — keyframe strip |
-| `src/lut.ts` | Edit — add `exportCubeFile()` |
-| `src/types.ts` | Edit — `TimelineColorNode`, `QualifierConfig`, `PowerWindowConfig`, keyframe types |
-| `src/components/timeline/compositor.ts` | Edit — multi-pass ping-pong rendering, qualifier/window shader code |
-| `src/components/timeline/TimelineEditor.vue` | Edit — Color tab, node graph panel integration |
+| `src/ui/components/timeline/ColorWheels.vue` | **New** — CDL wheel controls |
+| `src/ui/components/timeline/NodeGraph.vue` | **New** — node graph editor |
+| `src/ui/components/timeline/QualifierPanel.vue` | **New** — HSL qualifier controls |
+| `src/ui/components/timeline/PowerWindow.vue` | **New** — shape tools + overlay |
+| `src/ui/components/timeline/KeyframeEditor.vue` | **New** — keyframe strip |
+| `src/core/color/lut.ts` | Edit — add `exportCubeFile()` |
+| `src/core/types.ts` | Edit — `TimelineColorNode`, `QualifierConfig`, `PowerWindowConfig`, keyframe types |
+| `src/ui/components/timeline/compositor.ts` | Edit — multi-pass ping-pong rendering, qualifier/window shader code |
+| `src/ui/components/timeline/TimelineEditor.vue` | Edit — Color tab, node graph panel integration |
+
+## Parallel Integration Contract (with Rendering Plan)
+
+> This section defines how the color grading and rendering plans interact so they can
+> be implemented simultaneously without conflicts.
+
+### How Color Grading Automatically Works with Rendering
+
+1. **Fingerprinting**: The rendering plan's fingerprint includes the full `clip.operations`
+   array. When a `color_grade` or `lut` operation is added/modified, the fingerprint
+   changes and affected segments are re-rendered. **No rendering code changes needed.**
+
+2. **`ActiveClipInfo.colorGrade` is optional**: The `colorGrade` field on `ActiveClipInfo`
+   is typed as `colorGrade?: ColorGradeParams`. This means:
+   - **If rendering lands first**: It compiles fine — `colorGrade` is undefined, the render
+     worker's `FrameRenderer` skips color operations.
+   - **If color grading lands first**: `ActiveClipInfo` has the field, rendering adopts it
+     automatically when merged.
+
+3. **Compositor vs. FrameRenderer**: Color grading modifies the live preview compositor
+   (`src/ui/components/timeline/compositor.ts`). Rendering uses a **separate**
+   `FrameRenderer` class (`src/ui/render/frame-renderer.ts`). No merge conflicts on this file.
+
+4. **Future WebGPU render worker**: To share the color grading WGSL shader with the render
+   worker, extract the shader string to `src/ui/components/timeline/shader.ts` (or export
+   it from `compositor.ts`). The `WebGPUFrameRenderer` in the render worker imports it.
+
+### Shared Files — Ownership Rules
+
+| File | Rendering owns | Color Grading owns | Contract |
+|------|---------------|-------------------|----------|
+| `src/core/types.ts` | `RenderProfile`, `RenderDocument`, `BackgroundTask`, etc. | `'color_grade'` and `'lut'` in `TimelineOperation.type`, color fields, CDL/node types | Both add to `TimelineOperation.type` union — **additive, no conflict** |
+| `src/core/timeline/clip-helpers.ts` | No changes | Extends `ActiveClipInfo` with `colorGrade?`, updates `findActiveClip()` | Field is optional — rendering imports compile without color grading |
+| `src/ui/components/timeline/compositor.ts` | No changes (uses separate `FrameRenderer`) | Expands shader, bind group, `renderFrame()` signature, adds LUT textures | **No conflict** |
+| `src/ui/store.ts` | `backgroundTasks`, `activeRender`, render CRUD | `lutCache`, `addLutFiles()` | Different state slices — **no conflict** |
+| `src/ui/components/timeline/TimelineEditor.vue` | Adds Render button in tab bar | Adds Color tab | Different template areas — **low conflict risk** |
+
+### Merge Checklist (when both plans are complete)
+
+1. **Verify `FrameRenderer` applies color operations** — add `color_grade` handling to
+   `Canvas2DFrameRenderer.applyOperations()`:
+   - Read `ColorGradeParams` from the clip via `getClipColorGrade()` from `src/core/color/`
+   - Apply via Canvas2D filters: `ctx.filter = 'brightness(...) contrast(...) saturate(...)'`
+   - For LUT operations: use `applyLutToImageData()` from `src/core/color/lut.ts`
+2. **Verify fingerprint invalidation** — change a color grade slider, re-render, confirm
+   the segment is re-encoded (not cached)
+3. **Extract WGSL shader to shared module** (if not already done) for the future WebGPU
+   render worker path
 
 ## Decisions
 
 - **WebGPU-first:** All color math runs in the WGSL fragment shader. Canvas2D fallback gets basic CSS filter approximation only — not a priority.
+- **Core/UI split respected:** `ColorGradeParams`, `DEFAULT_COLOR_GRADE`, `COLOR_PROFILES`, `getClipColorGrade()`, `LutData`, `parseCubeFile()` are all pure TypeScript in `src/core/color/`. WebGPU shader code stays in `src/ui/components/timeline/compositor.ts`.
 - **Single `color_grade` operation:** One operation type covers all basic controls (brightness, contrast, sat, exposure, temp, tint, RGB). Simpler than separate operation types per control.
-- **Profiles are pure data:** Each profile is a `ColorGradeParams` object in `src/colorProfiles.ts`. Applying a profile overwrites the slider values on the operation. No runtime logic.
+- **Profiles are pure data:** Each profile is a `ColorGradeParams` object in `src/core/color/color-profiles.ts`. Applying a profile overwrites the slider values on the operation. No runtime logic.
 - **Shader pipeline order:** exposure → temperature/tint → RGB gains → brightness → contrast → saturation → (LUT in Step 2) → opacity. This matches standard color science: linear-domain adjustments first, perceptual adjustments second.
 - **Uniform buffer, not storage buffer:** 48 bytes fits comfortably in a uniform buffer (WebGPU min limit is 64KB). No need for storage buffers or push constants.
 - **No new npm dependencies for Step 1:** Color profiles are hardcoded constants. `.cube` parsing (Step 2) is ~50 lines. Scopes use native Canvas2D.
+- **`ActiveClipInfo.colorGrade` is optional:** Ensures rendering plan compiles without color grading code present.
