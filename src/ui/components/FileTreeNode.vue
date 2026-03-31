@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import type { FileNode } from '../../core/types'
 import { selectFile, toggleFolder, removeNode, activeFile, isTimelineNode } from '../store'
 
-defineProps<{ nodes: FileNode[]; depth?: number }>()
+const props = defineProps<{ nodes: FileNode[]; depth?: number }>()
+
+const emit = defineEmits<{
+  compress: [node: FileNode]
+}>()
 
 function isVideo(name: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogg|flv|wmv|m4v|ts)$/i.test(name)
@@ -24,6 +29,44 @@ function onDragStart(e: DragEvent, node: FileNode) {
     sourceName: node.name,
   }))
 }
+
+// ── Context menu ──
+
+interface ContextMenu {
+  x: number
+  y: number
+  node: FileNode
+}
+
+const contextMenu = ref<ContextMenu | null>(null)
+
+function onContextMenu(e: MouseEvent, node: FileNode) {
+  // Only show for non-folder, non-timeline video files
+  if (node.type !== 'file' || isTimelineNode(node) || !isVideo(node.name)) return
+  e.preventDefault()
+  contextMenu.value = { x: e.clientX, y: e.clientY, node }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+function onCompressClick(node: FileNode) {
+  closeContextMenu()
+  emit('compress', node)
+}
+
+function onWindowClick() {
+  if (contextMenu.value) closeContextMenu()
+}
+
+onMounted(() => {
+  window.addEventListener('click', onWindowClick)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', onWindowClick)
+})
 </script>
 
 <template>
@@ -60,6 +103,7 @@ function onDragStart(e: DragEvent, node: FileNode) {
         :draggable="isDraggableVideo(node)"
         @click="selectFile(node)"
         @dragstart="isDraggableVideo(node) && onDragStart($event, node)"
+        @contextmenu="onContextMenu($event, node)"
       >
         <span class="indent" :style="{ width: ((depth ?? 0) + 1) * 16 + 'px' }"></span>
         <!-- Timeline icon -->
@@ -90,9 +134,28 @@ function onDragStart(e: DragEvent, node: FileNode) {
         v-if="node.type === 'folder' && node.expanded && node.children?.length"
         :nodes="node.children"
         :depth="(depth ?? 0) + 1"
+        @compress="emit('compress', $event)"
       />
     </li>
   </ul>
+
+  <!-- Context menu (portal-like, rendered at cursor position) -->
+  <Teleport to="body">
+    <div
+      v-if="contextMenu"
+      class="ctx-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @click.stop
+    >
+      <button class="ctx-item" @click="onCompressClick(contextMenu.node)">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
+          <path d="M11 2a3 3 0 013 3v2h-2V5a1 1 0 00-1-1H5a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1v-2h2v2a3 3 0 01-3 3H5a3 3 0 01-3-3V5a3 3 0 013-3h6z"/>
+          <path d="M8 8l3-3-1.5-1.5L8 5 6.5 3.5 5 5l3 3zm0 0l-3 3 1.5 1.5L8 11l1.5 1.5L11 11 8 8z"/>
+        </svg>
+        Compress…
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <script lang="ts">
@@ -190,5 +253,39 @@ export default { name: 'FileTreeNode' }
 }
 .tree-item:hover .action-btn {
   display: block;
+}
+
+/* Context menu */
+</style>
+
+<style>
+/* Context menu must be unscoped so Teleport to body works */
+.ctx-menu {
+  position: fixed;
+  z-index: 99999;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 4px 0;
+  min-width: 140px;
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.ctx-item:hover {
+  background: #094771;
+  color: #fff;
 }
 </style>

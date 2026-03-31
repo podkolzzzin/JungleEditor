@@ -141,11 +141,11 @@ function onKeyDown(e: KeyboardEvent) {
         @clip-remove="removeClip"
         @clip-mousedown="onClipMouseDown"
         @edge-mousedown="onEdgeMouseDown"
+        @track-reorder-start="onTrackReorderStart"
         @set-track-volume="setTrackVolume"
         @wheel="onTimelineWheel"
         @seek="seekTo"
         @toggle-play="togglePlay"
-        @track-reorder-start="onTrackReorderStart"
       />
     </div>
   </div>

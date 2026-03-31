@@ -156,7 +156,7 @@ export function useTimeline(paneIdRef?: Ref<string>) {
     if (!doc.value) return
     const track = doc.value.tracks[trackIndex]
     if (!track) return
-    track.volume = Math.max(0, Math.min(1, vol))
+    track.volume = Math.max(0, vol)
     markDirty()
   }
 

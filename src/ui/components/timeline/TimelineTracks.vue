@@ -182,6 +182,9 @@ onBeforeUnmount(() => {
           <!-- Track label -->
           <div class="track-label-col">
             <div class="track-label" :style="{ borderLeftColor: trackColor(ti) }">
+              <div class="track-drag-handle" @mousedown="emit('track-reorder-start', $event, ti)" title="Drag to reorder">
+                <svg viewBox="0 0 6 10" fill="currentColor" width="6" height="10"><circle cx="1.5" cy="1.5" r="1"/><circle cx="4.5" cy="1.5" r="1"/><circle cx="1.5" cy="5" r="1"/><circle cx="4.5" cy="5" r="1"/><circle cx="1.5" cy="8.5" r="1"/><circle cx="4.5" cy="8.5" r="1"/></svg>
+              </div>
               <input class="track-name-input" v-model="track.name" />
               <button class="track-remove-btn" @click="emit('remove-track', ti)" title="Remove track">×</button>
             </div>
@@ -194,7 +197,7 @@ onBeforeUnmount(() => {
                 class="track-volume-slider"
                 data-testid="track-volume-slider"
                 min="0"
-                max="1"
+                max="5"
                 step="0.01"
                 :value="track.volume ?? 1"
                 @input="(e: Event) => emit('set-track-volume', ti, Number((e.target as HTMLInputElement).value))"

@@ -175,9 +175,9 @@ export async function openFileInTab(node: FileNode, targetPaneId?: string): Prom
     dirty: false,
   }
 
-  if (isTimeline && sourcesDir.value && node.sourceId) {
+  if (isTimeline && projectHandle.value && node.sourceId) {
     try {
-      tab.timelineDoc = await readTimelineFile(sourcesDir.value, node.sourceId)
+      tab.timelineDoc = await readTimelineFile(projectHandle.value, node.sourceId)
     } catch (e) {
       console.error(`Failed to load timeline "${node.name}":`, e)
       // Tab is created with null timelineDoc; TimelineEditor shows nothing
@@ -415,7 +415,7 @@ async function loadProject(handle: FileSystemDirectoryHandle): Promise<void> {
   console.log('sources directory ready')
 
   // Read sources/ metadata and in-memory handle cache
-  const { sources, folders, timelines } = await readAllSources(sd)
+  const { sources, folders, timelines } = await readAllSources(sd, handle)
   const handleMap = loadAllFileHandles()
   console.log(`Found ${sources.length} source(s), ${folders.length} folder(s), ${timelines.length} timeline(s), ${handleMap.size} cached handle(s)`)
 
@@ -579,9 +579,9 @@ export async function removeNode(nodeId: string, list: FileNode[] = fileTree): P
 async function cleanupNode(node: FileNode): Promise<void> {
   if (node.type === 'file') {
     if (isTimelineNode(node)) {
-      // Timeline file: delete .timeline from sources/
-      if (node.sourceId && sourcesDir.value) {
-        await deleteTimelineFile(sourcesDir.value, node.sourceId).catch(() => {})
+      // Timeline file: delete .timeline from project root
+      if (node.sourceId && projectHandle.value) {
+        await deleteTimelineFile(projectHandle.value, node.sourceId).catch(() => {})
       }
       if (activeFile.value?.id === node.id) {
         activeTimeline.value = null
@@ -640,7 +640,7 @@ export async function addFolder(name: string, parentFolder?: FileNode): Promise<
  * Prompts for a name and creates it in the selected folder (or root).
  */
 export async function createTimeline(name: string, parentFolder?: FileNode): Promise<void> {
-  if (!sourcesDir.value) return
+  if (!projectHandle.value) return
 
   const timelineId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -659,7 +659,7 @@ export async function createTimeline(name: string, parentFolder?: FileNode): Pro
     ],
   }
 
-  await writeTimelineFile(sourcesDir.value, timelineId, doc)
+  await writeTimelineFile(projectHandle.value, timelineId, doc)
 
   const targetPath = parentFolder?.path || ''
   const targetChildren = parentFolder?.children ?? fileTree
@@ -684,13 +684,13 @@ export async function createTimeline(name: string, parentFolder?: FileNode): Pro
  * Save the currently active timeline document back to disk.
  */
 export async function saveTimeline(): Promise<void> {
-  if (!sourcesDir.value || !activeFile.value || !activeTimeline.value) return
+  if (!projectHandle.value || !activeFile.value || !activeTimeline.value) return
   if (!isTimelineNode(activeFile.value)) return
 
   const timelineId = activeFile.value.sourceId
   if (!timelineId) return
 
-  await writeTimelineFile(sourcesDir.value, timelineId, activeTimeline.value)
+  await writeTimelineFile(projectHandle.value, timelineId, activeTimeline.value)
   console.log(`Timeline "${activeTimeline.value.name}" saved.`)
 }
 
@@ -716,8 +716,8 @@ export async function selectFile(node: FileNode): Promise<void> {
  * This is the low-level save used by useTimeline.
  */
 export async function saveTimelineById(sourceId: string, doc: TimelineDocument): Promise<void> {
-  if (!sourcesDir.value) return
-  await writeTimelineFile(sourcesDir.value, sourceId, doc)
+  if (!projectHandle.value) return
+  await writeTimelineFile(projectHandle.value, sourceId, doc)
   console.log(`Timeline "${doc.name}" saved.`)
 }
 
@@ -777,11 +777,11 @@ function findFolderByPath(path: string, list: FileNode[] = fileTree): FileNode |
 
 // ── Re-link helpers ──
 
-/** Count file nodes in tree that have no handle */
+/** Count file nodes in tree that have no handle (excludes timeline nodes, which never need handles) */
 function countUnlinked(nodes: FileNode[]): number {
   let count = 0
   for (const n of nodes) {
-    if (n.type === 'file' && !n.handle) count++
+    if (n.type === 'file' && !_isTimelineNode(n) && !n.handle) count++
     if (n.children) count += countUnlinked(n.children)
   }
   return count

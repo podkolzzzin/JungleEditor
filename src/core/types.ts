@@ -90,7 +90,7 @@ export interface TimelineClip {
 
 /** A transformation/operation applied to a clip */
 export interface TimelineOperation {
-  type: 'cut' | 'remove_segment' | 'speed' | 'fade_in' | 'fade_out' | 'mute'
+  type: 'cut' | 'remove_segment' | 'speed' | 'fade_in' | 'fade_out' | 'mute' | 'color_grade'
   /** For cut: the time point to split at (seconds) */
   at?: number
   /** For remove_segment: start of removed range (seconds, relative to clip) */
@@ -101,13 +101,34 @@ export interface TimelineOperation {
   rate?: number
   /** For fade_in/fade_out: duration in seconds */
   duration?: number
+  // ── Color grade fields (for type: 'color_grade') ──
+  /** Additive brightness adjustment (-1 to +1, default 0) */
+  brightness?: number
+  /** Contrast multiplier (0 to 3, default 1) */
+  contrast?: number
+  /** Saturation multiplier (0 to 3, default 1) */
+  saturation?: number
+  /** Exposure in EV stops (-3 to +3, default 0) */
+  exposure?: number
+  /** Color temperature shift (-1 cool to +1 warm, default 0) */
+  temperature?: number
+  /** Tint shift (-1 green to +1 magenta, default 0) */
+  tint?: number
+  /** Red channel gain (0 to 2, default 1) */
+  rGain?: number
+  /** Green channel gain (0 to 2, default 1) */
+  gGain?: number
+  /** Blue channel gain (0 to 2, default 1) */
+  bGain?: number
+  /** Name of an applied built-in color profile (optional) */
+  profileName?: string
 }
 
 /** A named track containing ordered clips */
 export interface TimelineTrack {
   name: string
   clips: TimelineClip[]
-  /** Track volume level (0–1). Defaults to 1.0 when undefined. */
+  /** Track volume level (0+). Defaults to 1.0 when undefined. Values above 1 amplify. */
   volume?: number
 }
 
@@ -119,6 +140,26 @@ export interface TimelineDocument {
   resolution?: string
   fps?: number
   tracks: TimelineTrack[]
+}
+
+// ── Compressor types ──
+
+export interface CompressSettings {
+  codec: 'avc1.640028' | 'vp09.00.10.08' | 'av01.0.04M.08'
+  container: 'mp4' | 'webm'
+  videoBitrate: number      // bps, e.g. 4_000_000
+  audioBitrate: number      // bps, e.g. 128_000
+  scaleWidth?: number       // optional output width (maintains aspect ratio)
+  scaleHeight?: number
+  framerate?: number        // optional fps override
+}
+
+export type CompressStatus = 'idle' | 'checking' | 'encoding' | 'done' | 'error' | 'cancelled'
+
+export interface CompressProgress {
+  percent: number
+  fps: number
+  etaSeconds: number
 }
 
 // ── Utility: check if a file node is a timeline ──
