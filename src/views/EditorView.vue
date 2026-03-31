@@ -4,10 +4,11 @@ import PreviewPanel from '@/components/panels/PreviewPanel.vue'
 import TimelinePanel from '@/components/panels/TimelinePanel.vue'
 import MediaBinPanel from '@/components/panels/MediaBinPanel.vue'
 import PropertiesPanel from '@/components/panels/PropertiesPanel.vue'
+import ExportDialog from '@/components/panels/ExportDialog.vue'
 </script>
 
 <template>
-  <div class="editor-layout">
+  <div class="editor-layout" data-testid="editor-layout">
     <ToolbarPanel class="toolbar" />
 
     <div class="editor-main">
@@ -17,6 +18,7 @@ import PropertiesPanel from '@/components/panels/PropertiesPanel.vue'
     </div>
 
     <TimelinePanel class="timeline" />
+    <ExportDialog />
   </div>
 </template>
 

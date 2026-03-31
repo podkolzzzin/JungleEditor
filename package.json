@@ -9,7 +9,10 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.ts,.tsx --fix",
-    "type-check": "vue-tsc --build --force"
+    "type-check": "vue-tsc --build --force",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test": "npm run type-check && npm run test:e2e"
   },
   "dependencies": {
     "pinia": "^3.0.2",
@@ -17,6 +20,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tsconfig/node22": "^22.0.1",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-vue": "^5.2.4",

@@ -1,22 +1,49 @@
 <script setup lang="ts">
+import { useProjectStore } from '@/stores/project'
+
+const project = useProjectStore()
 </script>
 
 <template>
-  <div class="toolbar-panel">
+  <div class="toolbar-panel" data-testid="toolbar">
     <div class="toolbar-group">
       <span class="logo">🌴 Jungle Editor</span>
     </div>
 
     <div class="toolbar-group toolbar-actions">
-      <button class="tool-btn" title="Undo">↩</button>
-      <button class="tool-btn" title="Redo">↪</button>
+      <button class="tool-btn" title="Undo" data-testid="undo-btn">↩</button>
+      <button class="tool-btn" title="Redo" data-testid="redo-btn">↪</button>
       <span class="separator" />
-      <button class="tool-btn" title="Cut tool">✂</button>
-      <button class="tool-btn" title="Select tool">◻</button>
+      <button
+        class="tool-btn"
+        :class="{ active: project.activeTool === 'cut' }"
+        title="Cut tool"
+        data-testid="cut-tool-btn"
+        @click="project.setActiveTool('cut')"
+      >✂</button>
+      <button
+        class="tool-btn"
+        :class="{ active: project.activeTool === 'select' }"
+        title="Select tool"
+        data-testid="select-tool-btn"
+        @click="project.setActiveTool('select')"
+      >◻</button>
+      <span class="separator" />
+      <button
+        class="tool-btn"
+        title="Split at playhead"
+        data-testid="split-btn"
+        @click="project.splitAtPlayhead()"
+      >⌇</button>
     </div>
 
     <div class="toolbar-group">
-      <button class="tool-btn primary" title="Export">Export</button>
+      <button
+        class="tool-btn primary"
+        title="Export"
+        data-testid="export-btn"
+        @click="project.openExportDialog()"
+      >Export</button>
     </div>
   </div>
 </template>
@@ -65,6 +92,11 @@
 
 .tool-btn.primary:hover {
   background: var(--color-accent-hover);
+}
+
+.tool-btn.active {
+  background: var(--color-bg-panel);
+  border-color: var(--color-accent);
 }
 
 .separator {

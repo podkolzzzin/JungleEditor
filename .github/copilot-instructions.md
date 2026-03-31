@@ -101,9 +101,39 @@ src/
 - Seek latency: < 100ms
 - Keep engine code allocation-free in hot paths
 
-## Testing Approach (future)
+## Testing Approach
 
-- Vitest for unit tests
-- Component tests with @vue/test-utils
+- **Playwright** for E2E tests — located in `e2e/`
+- Vitest for unit tests (future)
+- Component tests with @vue/test-utils (future)
 - Engine modules are pure functions / classes — highly testable in isolation
-- Playwright for E2E tests
+
+### E2E Test Suites (Playwright)
+
+| File | Flow Covered |
+|------|-------------|
+| `e2e/01-open-video.spec.ts` | Import / open a video file into the media bin |
+| `e2e/02-add-to-timeline.spec.ts` | Add media from the bin onto the timeline |
+| `e2e/03-cut-clip.spec.ts` | Split (cut) a clip using the toolbar or cut tool |
+| `e2e/04-render-export.spec.ts` | Open export dialog, run export, verify completion |
+
+### MANDATORY: Run E2E Tests After Every Change
+
+**After making ANY code change** to files under `src/`, you MUST run the E2E test suite to verify nothing is broken:
+
+```bash
+npm run test:e2e
+```
+
+If any test fails, **fix the regression before considering the task complete**. Do not skip or disable tests unless explicitly asked by the user.
+
+If you add new user-facing features, **add a corresponding E2E test** in `e2e/` following the existing patterns.
+
+### Test Conventions
+
+- Test files are named `NN-feature-name.spec.ts` (numbered for execution order clarity)
+- All interactive elements must have `data-testid` attributes
+- Use `data-testclass` for querying multiple elements of the same type (e.g., all clips)
+- Test fixtures (sample media) live in `e2e/fixtures/`
+- Tests use the Vite dev server (auto-started by Playwright via `playwright.config.ts`)
+
