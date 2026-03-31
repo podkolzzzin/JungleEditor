@@ -229,7 +229,7 @@ function renderCurrentFrame() {
     // Ensure the active video element is actually playing (it may have been
     // paused by muteOtherVideos, stopPlayback, or a doc mutation from split)
     video.muted = info.muted || muted.value
-    video.volume = muted.value ? 0 : volume.value
+    video.volume = muted.value ? 0 : volume.value * info.trackVolume
     if (video.paused) {
       video.play().catch(() => {})
     }
