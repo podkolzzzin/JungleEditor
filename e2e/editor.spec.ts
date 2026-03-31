@@ -362,4 +362,62 @@ test.describe('JungleEditor E2E', () => {
     await label.click()
     await expect(label).toHaveText('100%')
   })
+
+  test('track reorder via drag handle', async ({ page }) => {
+    await page.goto('/')
+
+    // Create project
+    await enqueueDirectoryPicker(page)
+    await page.getByText('Create Project').click()
+    await expect(page.locator('.app-shell')).toBeVisible()
+
+    // Create a timeline
+    await page.evaluate(() => {
+      window.prompt = () => 'Reorder Test'
+    })
+    await page.locator('.panel-btn[title="New Timeline"]').click()
+    await expect(page.locator('.timeline-editor')).toBeVisible({ timeout: 5000 })
+
+    // Should start with Track 1
+    const trackInputs = page.locator('.track-name-input')
+    await expect(trackInputs).toHaveCount(1)
+    await expect(trackInputs.first()).toHaveValue('Track 1')
+
+    // Add a second track
+    await page.locator('.tl-tool-btn', { hasText: 'Track' }).click()
+    await expect(trackInputs).toHaveCount(2)
+    await expect(trackInputs.nth(0)).toHaveValue('Track 1')
+    await expect(trackInputs.nth(1)).toHaveValue('Track 2')
+
+    // Add a third track for a robust reorder test
+    await page.locator('.tl-tool-btn', { hasText: 'Track' }).click()
+    await expect(trackInputs).toHaveCount(3)
+    await expect(trackInputs.nth(2)).toHaveValue('Track 3')
+
+    // Get the drag handles
+    const handles = page.locator('.track-drag-handle')
+    await expect(handles).toHaveCount(3)
+
+    // Drag Track 3 handle up to Track 1 position
+    const handle3 = handles.nth(2)
+    const track1Lane = page.locator('.track-lane').first()
+
+    const handleBox = await handle3.boundingBox()
+    const targetBox = await track1Lane.boundingBox()
+    expect(handleBox).toBeTruthy()
+    expect(targetBox).toBeTruthy()
+
+    // Perform the drag: mousedown on Track 3 handle, move to Track 1 center, mouseup
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 10 })
+    await page.mouse.up()
+
+    await page.waitForTimeout(300)
+
+    // After dragging Track 3 to position 0, order should be: Track 3, Track 1, Track 2
+    await expect(trackInputs.nth(0)).toHaveValue('Track 3')
+    await expect(trackInputs.nth(1)).toHaveValue('Track 1')
+    await expect(trackInputs.nth(2)).toHaveValue('Track 2')
+  })
 })
