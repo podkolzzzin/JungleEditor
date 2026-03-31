@@ -107,6 +107,8 @@ export interface TimelineOperation {
 export interface TimelineTrack {
   name: string
   clips: TimelineClip[]
+  /** Track volume level (0–1). Defaults to 1.0 when undefined. */
+  volume?: number
 }
 
 /** The full timeline document structure (maps to YAML) */

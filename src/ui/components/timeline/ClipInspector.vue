@@ -122,9 +122,8 @@ function removeOperation(index: number) {
 
 <style scoped>
 .inspector-panel {
-  width: 280px;
   flex-shrink: 0;
-  border-left: 1px solid var(--border-color);
+  border-left: none;
   display: flex;
   flex-direction: column;
   overflow-y: auto;

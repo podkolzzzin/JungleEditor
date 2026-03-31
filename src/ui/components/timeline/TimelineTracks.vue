@@ -4,6 +4,7 @@ import type { TimelineDocument } from '../../../core/types'
 import type { ClipSelection, TrimEdge } from './useTimeline'
 import { formatTime, trackColor, DEFAULT_PPS } from './useTimeline'
 import ClipBlock from './ClipBlock.vue'
+import WaveformTrack from './WaveformTrack.vue'
 
 const TRACK_LABEL_WIDTH = 140
 
@@ -13,6 +14,8 @@ const props = defineProps<{
   clipDrag: { trackIndex: number; clipIndex: number } | null
   clipDragTargetTrack: number | null
   edgeDrag: { trackIndex: number; clipIndex: number } | null
+  trackDrag: { trackIndex: number } | null
+  trackDragOverIndex: number | null
   dragOverTrack: number | null
   dragOverNewTrack: boolean
   pixelsPerSecond: number
@@ -42,9 +45,11 @@ const emit = defineEmits<{
   'clip-remove': [ti: number, ci: number]
   'clip-mousedown': [e: MouseEvent, ti: number, ci: number]
   'edge-mousedown': [e: MouseEvent, ti: number, ci: number, edge: TrimEdge]
+  'track-reorder-start': [e: MouseEvent, ti: number]
   'wheel': [e: WheelEvent]
   'seek': [time: number]
   'toggle-play': []
+  'set-track-volume': [ti: number, vol: number]
 }>()
 
 const tracksScrollEl = defineModel<HTMLElement | null>('tracksScrollEl')
@@ -166,41 +171,77 @@ onBeforeUnmount(() => {
           class="track-lane"
           :class="{
             'drag-over': dragOverTrack === ti,
-            'clip-drag-target': clipDrag !== null && clipDragTargetTrack === ti && clipDrag.trackIndex !== ti
+            'clip-drag-target': clipDrag !== null && clipDragTargetTrack === ti && clipDrag.trackIndex !== ti,
+            'track-reorder-over': trackDrag !== null && trackDragOverIndex === ti && trackDrag.trackIndex !== ti,
+            'track-reorder-dragging': trackDrag !== null && trackDrag.trackIndex === ti,
           }"
           @dragover="emit('track-dragover', $event, ti)"
           @dragleave="emit('track-dragleave', $event, ti)"
           @drop="emit('track-drop', $event, ti)"
         >
           <!-- Track label -->
-          <div class="track-label" :style="{ borderLeftColor: trackColor(ti) }">
-            <input class="track-name-input" v-model="track.name" />
-            <button class="track-remove-btn" @click="emit('remove-track', ti)" title="Remove track">×</button>
+          <div class="track-label-col">
+            <div class="track-label" :style="{ borderLeftColor: trackColor(ti) }">
+              <input class="track-name-input" v-model="track.name" />
+              <button class="track-remove-btn" @click="emit('remove-track', ti)" title="Remove track">×</button>
+            </div>
+            <div class="track-volume-label" data-testid="track-volume-label">
+              <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11" class="volume-icon">
+                <path d="M8 2L4 6H1v4h3l4 4V2z"/>
+              </svg>
+              <input
+                type="range"
+                class="track-volume-slider"
+                data-testid="track-volume-slider"
+                min="0"
+                max="1"
+                step="0.01"
+                :value="track.volume ?? 1"
+                @input="(e: Event) => emit('set-track-volume', ti, Number((e.target as HTMLInputElement).value))"
+                title="Track volume"
+              />
+              <span class="track-volume-value">{{ Math.round((track.volume ?? 1) * 100) }}%</span>
+            </div>
           </div>
 
-          <!-- Clip blocks -->
-          <div class="track-clips-area" :style="{ width: timelineWidth + 'px' }">
-            <ClipBlock
-              v-for="(clip, ci) in track.clips"
-              :key="ci"
-              :clip="clip"
-              :track-index="ti"
-              :clip-index="ci"
-              :selected="selectedClip?.trackIndex === ti && selectedClip?.clipIndex === ci"
-              :dragging="clipDrag?.trackIndex === ti && clipDrag?.clipIndex === ci"
-              :trimming="edgeDrag?.trackIndex === ti && edgeDrag?.clipIndex === ci"
-              :width-px="clipWidthFn(clip)"
-              :left-px="clipOffsetFn(clip)"
-              @select="(eti: number, eci: number) => emit('clip-select', eti, eci)"
-              @remove="(eti: number, eci: number) => emit('clip-remove', eti, eci)"
-              @mousedown="(e: MouseEvent) => emit('clip-mousedown', e, ti, ci)"
-              @edge-mousedown="(e: MouseEvent, _ti: number, _ci: number, edge: TrimEdge) => emit('edge-mousedown', e, ti, ci, edge)"
-            />
+          <!-- Clips + Waveform -->
+          <div class="track-content-col">
+            <!-- Clip blocks -->
+            <div class="track-clips-area" :style="{ width: timelineWidth + 'px' }">
+              <ClipBlock
+                v-for="(clip, ci) in track.clips"
+                :key="ci"
+                :clip="clip"
+                :track-index="ti"
+                :clip-index="ci"
+                :selected="selectedClip?.trackIndex === ti && selectedClip?.clipIndex === ci"
+                :dragging="clipDrag?.trackIndex === ti && clipDrag?.clipIndex === ci"
+                :trimming="edgeDrag?.trackIndex === ti && edgeDrag?.clipIndex === ci"
+                :width-px="clipWidthFn(clip)"
+                :left-px="clipOffsetFn(clip)"
+                @select="(eti: number, eci: number) => emit('clip-select', eti, eci)"
+                @remove="(eti: number, eci: number) => emit('clip-remove', eti, eci)"
+                @mousedown="(e: MouseEvent) => emit('clip-mousedown', e, ti, ci)"
+                @edge-mousedown="(e: MouseEvent, _ti: number, _ci: number, edge: TrimEdge) => emit('edge-mousedown', e, ti, ci, edge)"
+              />
 
-            <!-- Empty track hint -->
-            <div v-if="!track.clips.length" class="track-empty-hint">
-              Drop a video here
+              <!-- Empty track hint -->
+              <div v-if="!track.clips.length" class="track-empty-hint">
+                Drop a video here
+              </div>
             </div>
+
+            <!-- Waveform subtrack -->
+            <WaveformTrack
+              v-if="track.clips.length"
+              :clips="track.clips"
+              :track-index="ti"
+              :pixels-per-second="pixelsPerSecond"
+              :clip-width-fn="clipWidthFn"
+              :clip-offset-fn="clipOffsetFn"
+              :color="trackColor(ti)"
+              :volume="track.volume ?? 1"
+            />
           </div>
         </div>
 
@@ -353,16 +394,110 @@ onBeforeUnmount(() => {
   background: rgba(0,122,204,0.12);
   box-shadow: inset 0 0 0 1px var(--accent-color);
 }
-.track-label {
+.track-label-col {
   width: 140px;
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-color);
+}
+.track-label {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 4px 12px;
+  padding: 4px 8px 4px 4px;
   border-left: 3px solid;
   background: rgba(255,255,255,0.02);
-  border-right: 1px solid var(--border-color);
+  min-height: 44px;
+}
+.track-volume-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 15px;
+  background: rgba(0,0,0,0.15);
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+.volume-icon {
+  color: var(--sidebar-fg-dim);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.track-volume-slider {
+  width: 60px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.track-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sidebar-fg-dim);
+  cursor: pointer;
+  border: none;
+}
+.track-volume-slider::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sidebar-fg-dim);
+  cursor: pointer;
+  border: none;
+}
+.track-volume-slider:hover::-webkit-slider-thumb {
+  background: #fff;
+}
+.track-volume-slider:hover::-moz-range-thumb {
+  background: #fff;
+}
+.track-volume-value {
+  font-size: 9px;
+  font-family: var(--mono);
+  color: var(--sidebar-fg-dim);
+  opacity: 0.6;
+  min-width: 28px;
+  text-align: right;
+}
+.track-content-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.track-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  cursor: grab;
+  color: var(--sidebar-fg-dim);
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 2px 0;
+}
+.track-lane:hover .track-drag-handle {
+  opacity: 0.6;
+}
+.track-drag-handle:hover {
+  opacity: 1 !important;
+  color: var(--sidebar-fg);
+}
+.track-drag-handle:active {
+  cursor: grabbing;
+}
+.track-lane.track-reorder-dragging {
+  opacity: 0.5;
+}
+.track-lane.track-reorder-over {
+  background: rgba(0,122,204,0.12);
+  box-shadow: inset 0 -2px 0 0 var(--accent-color);
 }
 .track-name-input {
   background: none;
