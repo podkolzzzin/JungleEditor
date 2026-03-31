@@ -102,3 +102,35 @@ export function findActiveClip(
   }
   return null
 }
+
+/**
+ * Find ALL active clips at a given global timeline time (across all tracks).
+ * Returns them in bottom-to-top order (track 0 is at the bottom, last track on top)
+ * so they can be composited in painter's order.
+ */
+export function findAllActiveClips(
+  tracks: TimelineTrack[],
+  time: number,
+): ActiveClipInfo[] {
+  const results: ActiveClipInfo[] = []
+  for (let ti = tracks.length - 1; ti >= 0; ti--) {
+    const track = tracks[ti]
+    for (let ci = 0; ci < track.clips.length; ci++) {
+      const clip = track.clips[ci]
+      const clipOffset = clip.offset ?? 0
+      const speed = getClipSpeed(clip)
+      const effectiveDuration = getClipEffectiveDuration(clip)
+      if (time >= clipOffset && time < clipOffset + effectiveDuration) {
+        const localTime = time - clipOffset
+        const sourceTime = clip.in + localTime * speed
+        const opacity = computeClipOpacity(clip, localTime)
+        const muted = isClipMuted(clip)
+        const trackVolume = track.volume ?? 1
+        const hasColorGrade = clip.operations?.some(op => op.type === 'color_grade') ?? false
+        const colorGrade = hasColorGrade ? getClipColorGrade(clip) : undefined
+        results.push({ clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, trackVolume, colorGrade })
+      }
+    }
+  }
+  return results
+}

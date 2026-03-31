@@ -10,6 +10,7 @@ export {
   computeClipOpacity,
   isClipMuted,
   findActiveClip,
+  findAllActiveClips,
   type ActiveClipInfo,
 } from './clip-helpers'
 export { computeTotalDuration, splitClipInTrack, splitAllAtPlayhead } from './operations'
