@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import type { FileNode } from '../../core/types'
-import { selectFile, toggleFolder, removeNode, activeFile, isTimelineNode } from '../store'
+import { selectFile, toggleFolder, removeNode, activeFile, isTimelineNode, createRenderProfile } from '../store'
+import { showInputDialog } from '../composables/useInputDialog'
 
 const props = defineProps<{ nodes: FileNode[]; depth?: number }>()
 
@@ -17,8 +18,12 @@ function isTimeline(name: string): boolean {
   return name.endsWith('.timeline')
 }
 
+function isRender(name: string): boolean {
+  return name.endsWith('.render')
+}
+
 function isDraggableVideo(node: FileNode): boolean {
-  return node.type === 'file' && !isTimelineNode(node)
+  return node.type === 'file' && !isTimelineNode(node) && !isRender(node.name)
 }
 
 function onDragStart(e: DragEvent, node: FileNode) {
@@ -41,10 +46,12 @@ interface ContextMenu {
 const contextMenu = ref<ContextMenu | null>(null)
 
 function onContextMenu(e: MouseEvent, node: FileNode) {
-  // Only show for non-folder, non-timeline video files
-  if (node.type !== 'file' || isTimelineNode(node) || !isVideo(node.name)) return
-  e.preventDefault()
-  contextMenu.value = { x: e.clientX, y: e.clientY, node }
+  // Show context menu for video files and timeline files
+  if (node.type !== 'file') return
+  if (isTimelineNode(node) || isRender(node.name) || isVideo(node.name)) {
+    e.preventDefault()
+    contextMenu.value = { x: e.clientX, y: e.clientY, node }
+  }
 }
 
 function closeContextMenu() {
@@ -54,6 +61,18 @@ function closeContextMenu() {
 function onCompressClick(node: FileNode) {
   closeContextMenu()
   emit('compress', node)
+}
+
+async function onCreateRenderProfile(node: FileNode) {
+  closeContextMenu()
+  const defaultName = node.name.replace('.timeline', '') + '_render'
+  const name = await showInputDialog({
+    title: 'Render Profile Name',
+    value: defaultName,
+  })
+  if (name) {
+    await createRenderProfile(node, name)
+  }
 }
 
 function onWindowClick() {
@@ -110,6 +129,9 @@ onBeforeUnmount(() => {
         <svg v-if="isTimeline(node.name)" class="icon timeline-icon" viewBox="0 0 16 16" fill="currentColor">
           <path d="M1 2.5A1.5 1.5 0 012.5 1h3.879a1.5 1.5 0 011.06.44l1.122 1.12A1.5 1.5 0 009.62 3H13.5A1.5 1.5 0 0115 4.5v8a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-10zM2 5v7.5a.5.5 0 00.5.5h11a.5.5 0 00.5-.5V5H2z"/>
         </svg>
+        <svg v-else-if="isRender(node.name)" class="icon render-icon" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M14.5 2H9l-1-.5H1.5l-.5.5v11l.5.5h13l.5-.5V2.5l-.5-.5zM14 13H2V3h5.29l1 .5H14v9.5z"/>
+        </svg>
         <svg v-else-if="isVideo(node.name)" class="icon video-icon" viewBox="0 0 16 16" fill="currentColor">
           <path d="M0 1a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H1a1 1 0 01-1-1V1zm4 3v8l8-4-8-4z"/>
         </svg>
@@ -147,13 +169,34 @@ onBeforeUnmount(() => {
       :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
       @click.stop
     >
-      <button class="ctx-item" @click="onCompressClick(contextMenu.node)">
-        <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
-          <path d="M11 2a3 3 0 013 3v2h-2V5a1 1 0 00-1-1H5a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1v-2h2v2a3 3 0 01-3 3H5a3 3 0 01-3-3V5a3 3 0 013-3h6z"/>
-          <path d="M8 8l3-3-1.5-1.5L8 5 6.5 3.5 5 5l3 3zm0 0l-3 3 1.5 1.5L8 11l1.5 1.5L11 11 8 8z"/>
-        </svg>
-        Compress…
-      </button>
+      <!-- Timeline file options -->
+      <template v-if="isTimeline(contextMenu.node.name)">
+        <button class="ctx-item" @click="onCreateRenderProfile(contextMenu.node)">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
+            <path d="M14.5 2H9l-1-.5H1.5l-.5.5v11l.5.5h13l.5-.5V2.5l-.5-.5zM14 13H2V3h5.29l1 .5H14v9.5z"/>
+          </svg>
+          Create Render Profile
+        </button>
+      </template>
+      <!-- Video file options -->
+      <template v-else-if="isVideo(contextMenu.node.name)">
+        <button class="ctx-item" @click="onCompressClick(contextMenu.node)">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
+            <path d="M11 2a3 3 0 013 3v2h-2V5a1 1 0 00-1-1H5a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1v-2h2v2a3 3 0 01-3 3H5a3 3 0 01-3-3V5a3 3 0 013-3h6z"/>
+            <path d="M8 8l3-3-1.5-1.5L8 5 6.5 3.5 5 5l3 3zm0 0l-3 3 1.5 1.5L8 11l1.5 1.5L11 11 8 8z"/>
+          </svg>
+          Compress…
+        </button>
+      </template>
+      <!-- Render file options -->
+      <template v-else-if="isRender(contextMenu.node.name)">
+        <button class="ctx-item" @click="removeNode(contextMenu.node.id); closeContextMenu()">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13">
+            <path d="M10 3h3v1H3V3h3l1-1h2l1 1zM4 5v8c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V5H4z"/>
+          </svg>
+          Delete
+        </button>
+      </template>
     </div>
   </Teleport>
 </template>
@@ -221,6 +264,9 @@ export default { name: 'FileTreeNode' }
 }
 .icon.timeline-icon {
   color: #c678dd;
+}
+.icon.render-icon {
+  color: #56b6c2;
 }
 .folder .icon {
   color: #d19a66;

@@ -4,6 +4,7 @@ import { sidebarOpen, hasProject, projectName, loading, initFromStorage, paneLay
 import type { FileNode } from '../core/types'
 import ActivityBar from './components/ActivityBar.vue'
 import FileTree from './components/FileTree.vue'
+import BackgroundTasks from './components/BackgroundTasks.vue'
 import StatusBar from './components/StatusBar.vue'
 import LandingScreen from './components/LandingScreen.vue'
 import ResizeHandle from './components/ResizeHandle.vue'
@@ -68,6 +69,7 @@ onMounted(() => {
 
       <div class="sidebar" v-show="sidebarOpen" :style="{ width: sidebarWidth + 'px' }">
         <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" />
+        <BackgroundTasks v-else-if="activePanel === 'tasks'" />
       </div>
 
       <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />
