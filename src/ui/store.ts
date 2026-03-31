@@ -750,7 +750,7 @@ export async function addFolder(name: string, parentFolder?: FileNode): Promise<
 export async function createTimeline(name: string, parentFolder?: FileNode): Promise<void> {
   if (!projectHandle.value) return
 
-  const timelineId = crypto.randomUUID()
+  const timelineId = name
   const now = new Date().toISOString()
 
   const doc: TimelineDocument = {

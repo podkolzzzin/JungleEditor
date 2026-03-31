@@ -120,7 +120,12 @@ export async function readTimelineFile(
     const fileHandle = await projectDir.getFileHandle(`${timelineId}.timeline`)
     const file = await fileHandle.getFile()
     const text = await file.text()
-    return parseTimeline(text)
+    const doc = parseTimeline(text)
+    if (doc) {
+      // Name is derived from filename, not stored inside YAML
+      doc.name = timelineId
+    }
+    return doc
   } catch {
     return null
   }
@@ -184,7 +189,7 @@ export async function readAllSources(
       const id = entry.name.replace('.timeline', '')
       timelines.push({
         id,
-        name: doc.name || entry.name,
+        name: id,
         path: '',
         created: doc.created,
       })
