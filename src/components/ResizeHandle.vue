@@ -11,6 +11,13 @@ const emit = defineEmits<{
 
 let startPos = 0
 
+function cleanup() {
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('mouseup', onMouseUp)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
 function onMouseDown(e: MouseEvent) {
   e.preventDefault()
   startPos = props.direction === 'horizontal' ? e.clientX : e.clientY
@@ -30,17 +37,11 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
+  cleanup()
 }
 
 onBeforeUnmount(() => {
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
+  cleanup()
 })
 </script>
 
