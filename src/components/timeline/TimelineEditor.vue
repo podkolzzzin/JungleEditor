@@ -1,8 +1,21 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useTimeline } from './useTimeline'
 import TimelinePlayer from './TimelinePlayer.vue'
 import ClipInspector from './ClipInspector.vue'
 import TimelineTracks from './TimelineTracks.vue'
+import ResizeHandle from '../ResizeHandle.vue'
+
+const topSectionHeight = ref(280)
+const inspectorWidth = ref(280)
+
+function onTopSectionResize(delta: number) {
+  topSectionHeight.value = Math.max(120, Math.min(600, topSectionHeight.value + delta))
+}
+
+function onInspectorResize(delta: number) {
+  inspectorWidth.value = Math.max(180, Math.min(500, inspectorWidth.value - delta))
+}
 
 const {
   activeFile,
@@ -80,7 +93,7 @@ function onKeyDown(e: KeyboardEvent) {
     <!-- Main content -->
     <div class="editor-body">
       <!-- Top section: Player + Clip inspector -->
-      <div class="top-section">
+      <div class="top-section" :style="{ height: topSectionHeight + 'px' }">
         <TimelinePlayer
           :doc="doc"
           :global-playhead="globalPlayhead"
@@ -90,11 +103,16 @@ function onKeyDown(e: KeyboardEvent) {
           @update:is-playing="isPlaying = $event"
         />
 
+        <ResizeHandle direction="horizontal" @resize="onInspectorResize" />
+
         <ClipInspector
           :clip="inspectedClip"
+          :style="{ width: inspectorWidth + 'px' }"
           @dirty="markDirty"
         />
       </div>
+
+      <ResizeHandle direction="vertical" @resize="onTopSectionResize" />
 
       <!-- Bottom: Timeline tracks area -->
       <TimelineTracks
@@ -203,8 +221,7 @@ function onKeyDown(e: KeyboardEvent) {
 /* ── Top section ── */
 .top-section {
   display: flex;
-  height: 280px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: none;
 }
 </style>
