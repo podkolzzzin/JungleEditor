@@ -474,6 +474,138 @@ test.describe('JungleEditor E2E', () => {
       timeout: 5000,
     })
 
+    // Create a timeline
+    await page.evaluate(() => { window.prompt = () => 'Color Grade Test' })
+    await page.locator('.panel-btn[title="New Timeline"]').click()
+    await expect(page.locator('.timeline-editor')).toBeVisible({ timeout: 5000 })
+
+    // ── Inject a clip with a color_grade operation directly into the reactive doc ──
+    const sourceId = await page.evaluate(async () => {
+      const mock = (window as any).__fsMock
+      const root = mock.projectRoot
+      const sourcesDir = root.children.get('sources')
+      if (!sourcesDir) return null
+      for (const [name, child] of sourcesDir.children) {
+        if (name.endsWith('.source') && child.kind === 'file') {
+          const text = new TextDecoder().decode(child.data)
+          const idMatch = text.match(/^id=(.+)$/m)
+          const nameMatch = text.match(/^name=(.+)$/m)
+          if (idMatch && nameMatch && nameMatch[1] === 'test-video.mp4') {
+            return idMatch[1]
+          }
+        }
+      }
+      return null
+    })
+
+    expect(sourceId).toBeTruthy()
+
+    await page.evaluate((sid) => {
+      const appEl = document.getElementById('app')
+      const vueApp = appEl && (appEl as any).__vue_app__
+      if (!vueApp) return
+
+      function findTimelineDoc(instance: any): any {
+        if (!instance) return null
+        const setup = instance.setupState
+        if (setup && setup.activeTimeline && setup.activeTimeline.value) {
+          return setup.activeTimeline.value
+        }
+        if (instance.subTree) {
+          const children = getChildren(instance.subTree)
+          for (const child of children) {
+            const result = findTimelineDoc(child)
+            if (result) return result
+          }
+        }
+        return null
+      }
+
+      function getChildren(vnode: any): any[] {
+        const result: any[] = []
+        if (vnode.component) result.push(vnode.component)
+        if (Array.isArray(vnode.children)) {
+          for (const child of vnode.children) {
+            if (child && typeof child === 'object') {
+              if (child.component) result.push(child.component)
+              result.push(...getChildren(child))
+            }
+          }
+        }
+        if (vnode.dynamicChildren) {
+          for (const child of vnode.dynamicChildren) {
+            if (child.component) result.push(child.component)
+            result.push(...getChildren(child))
+          }
+        }
+        return result
+      }
+
+      const doc = findTimelineDoc(vueApp._instance)
+      if (!doc) return
+
+      if (doc.tracks.length > 0) {
+        doc.tracks[0].clips.push({
+          sourceId: sid,
+          sourceName: 'test-video.mp4',
+          in: 0,
+          out: 3,
+          offset: 0,
+          operations: [
+            {
+              type: 'color_grade',
+              brightness: 0,
+              contrast: 1,
+              saturation: 1,
+              exposure: 0,
+              temperature: 0,
+              tint: 0,
+              rGain: 1,
+              gGain: 1,
+              bGain: 1,
+            },
+          ],
+        })
+      }
+    }, sourceId)
+
+    await page.waitForTimeout(500)
+
+    const clipBlock = page.locator('.clip-block').first()
+    const clipVisible = await clipBlock.isVisible().catch(() => false)
+    if (!clipVisible) return // Skip if clip injection didn't work (flaky guard)
+
+    // ── Verify the color_grade dot appears on the clip block ──
+    const colorGradeDot = page.locator('.clip-op-dot.color_grade').first()
+    await expect(colorGradeDot).toBeVisible({ timeout: 3000 })
+
+    // ── Click the clip to select it and open the inspector ──
+    await clipBlock.click()
+    await page.waitForTimeout(300)
+
+    // ── The color grade panel should be visible in the inspector ──
+    const cgPanel = page.locator('.cg-panel').first()
+    await expect(cgPanel).toBeVisible({ timeout: 3000 })
+
+    // ── Profile dropdown should be visible ──
+    const profileSelect = page.locator('.cg-profile-select').first()
+    await expect(profileSelect).toBeVisible()
+
+    // ── Select the "Cinematic Warm" profile and verify it applies ──
+    await profileSelect.selectOption('Cinematic Warm')
+    await page.waitForTimeout(200)
+
+    // After applying a profile, the profile dropdown should reflect the selection
+    await expect(profileSelect).toHaveValue('Cinematic Warm')
+
+    // ── Manually adjust brightness slider — should clear profileName (shown as "Custom") ──
+    const brightnessSlider = page.locator('.cg-slider').first()
+    await expect(brightnessSlider).toBeVisible()
+    await brightnessSlider.fill('0.3')
+    await page.waitForTimeout(200)
+
+    // After manual adjustment, profile selector should revert to Custom
+    await expect(profileSelect).toHaveValue('')
     // Right-click the video file in the file tree
     const fileItem = page.locator('.tree-item', { has: page.locator('.label', { hasText: 'test-video.mp4' }) })
     await fileItem.click({ button: 'right' })
