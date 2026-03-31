@@ -4,6 +4,8 @@
  */
 
 import type { TimelineClip, TimelineTrack } from '../types'
+import { getClipColorGrade } from '../color'
+import type { ColorGradeParams } from '../color'
 
 // ── Speed / duration helpers ──
 
@@ -66,6 +68,8 @@ export interface ActiveClipInfo {
   speed: number
   /** Whether audio should be muted */
   muted: boolean
+  /** Resolved color grade parameters (optional — always populated when clip-helpers is imported) */
+  colorGrade?: ColorGradeParams
 }
 
 /**
@@ -88,7 +92,8 @@ export function findActiveClip(
         const sourceTime = clip.in + localTime * speed
         const opacity = computeClipOpacity(clip, localTime)
         const muted = isClipMuted(clip)
-        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted }
+        const colorGrade = getClipColorGrade(clip)
+        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, colorGrade }
       }
     }
   }

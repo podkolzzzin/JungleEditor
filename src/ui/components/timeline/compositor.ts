@@ -16,11 +16,25 @@ export {
   type ActiveClipInfo,
 } from '../../../core/timeline/clip-helpers'
 
+import type { ColorGradeParams } from '../../../core/color'
+import { DEFAULT_COLOR_GRADE } from '../../../core/color'
+
 // ── WebGPU Shader ──
 
 const SHADER_CODE = /* wgsl */ `
 struct Params {
-  opacity: f32,
+  opacity:     f32,
+  brightness:  f32,
+  contrast:    f32,
+  saturation:  f32,   // 16 bytes
+  exposure:    f32,
+  temperature: f32,
+  tint:        f32,
+  _pad1:       f32,   // 32 bytes
+  rGain:       f32,
+  gGain:       f32,
+  bGain:       f32,
+  _pad2:       f32,   // 48 bytes
 }
 
 @group(0) @binding(0) var mySampler: sampler;
@@ -50,8 +64,34 @@ fn vs(@builtin(vertex_index) idx: u32) -> VertexOutput {
 
 @fragment
 fn fs(in: VertexOutput) -> @location(0) vec4f {
-  let color = textureSampleBaseClampToEdge(myTexture, mySampler, in.uv);
-  return vec4f(color.rgb * params.opacity, 1.0);
+  var c = textureSampleBaseClampToEdge(myTexture, mySampler, in.uv).rgb;
+
+  // 1. Exposure (EV stops)
+  c *= pow(2.0, params.exposure);
+
+  // 2. Temperature & tint (simplified: shift blue<->yellow, green<->magenta)
+  c.r += params.temperature * 0.1;
+  c.b -= params.temperature * 0.1;
+  c.g += params.tint * 0.1;
+  c.r -= params.tint * 0.05;
+  c.b -= params.tint * 0.05;
+
+  // 3. RGB channel gains
+  c = vec3f(c.r * params.rGain, c.g * params.gGain, c.b * params.bGain);
+
+  // 4. Brightness (additive)
+  c += vec3f(params.brightness);
+
+  // 5. Contrast (pivot at 0.5)
+  c = (c - vec3f(0.5)) * params.contrast + vec3f(0.5);
+
+  // 6. Saturation (luminance-preserving)
+  let lum = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+  c = mix(vec3f(lum), c, params.saturation);
+
+  // 7. Clamp & opacity
+  c = clamp(c, vec3f(0.0), vec3f(1.0));
+  return vec4f(c * params.opacity, 1.0);
 }
 `
 
@@ -96,7 +136,7 @@ export class TimelineCompositor {
       })
 
       this.paramsBuffer = this.device.createBuffer({
-        size: 16, // vec4-aligned
+        size: 48, // 12 floats × 4 bytes — full color grade params
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       })
 
@@ -131,12 +171,12 @@ export class TimelineCompositor {
     }
   }
 
-  /** Render a video frame with the given opacity. Returns true if rendered successfully. */
-  renderFrame(video: HTMLVideoElement, opacity: number): boolean {
+  /** Render a video frame with the given opacity and color grade. Returns true if rendered successfully. */
+  renderFrame(video: HTMLVideoElement, opacity: number, cg: ColorGradeParams = DEFAULT_COLOR_GRADE): boolean {
     if (this._useWebGPU) {
-      return this.renderWebGPU(video, opacity)
+      return this.renderWebGPU(video, opacity, cg)
     } else {
-      return this.renderCanvas2D(video, opacity)
+      return this.renderCanvas2D(video, opacity, cg)
     }
   }
 
@@ -161,14 +201,29 @@ export class TimelineCompositor {
     }
   }
 
-  private renderWebGPU(video: HTMLVideoElement, opacity: number): boolean {
+  private renderWebGPU(video: HTMLVideoElement, opacity: number, cg: ColorGradeParams): boolean {
     if (!this.device || !this.context || !this.pipeline ||
         !this.sampler || !this.paramsBuffer || !this.bindGroupLayout) return false
 
     try {
+      // Write all 12 floats: opacity, brightness, contrast, saturation, exposure,
+      // temperature, tint, pad, rGain, gGain, bGain, pad
       this.device.queue.writeBuffer(
         this.paramsBuffer, 0,
-        new Float32Array([opacity, 0, 0, 0]),
+        new Float32Array([
+          opacity,
+          cg.brightness,
+          cg.contrast,
+          cg.saturation,
+          cg.exposure,
+          cg.temperature,
+          cg.tint,
+          0,            // _pad1
+          cg.rGain,
+          cg.gGain,
+          cg.bGain,
+          0,            // _pad2
+        ]),
       )
 
       const externalTexture = this.device.importExternalTexture({ source: video })
@@ -219,7 +274,7 @@ export class TimelineCompositor {
     }
   }
 
-  private renderCanvas2D(video: HTMLVideoElement, opacity: number): boolean {
+  private renderCanvas2D(video: HTMLVideoElement, opacity: number, cg: ColorGradeParams): boolean {
     if (!this.ctx2d) return false
     const { width, height } = this.ctx2d.canvas
     this.ctx2d.clearRect(0, 0, width, height)
@@ -227,6 +282,13 @@ export class TimelineCompositor {
     this.ctx2d.fillRect(0, 0, width, height)
 
     if (video.readyState < 2) return false // HAVE_CURRENT_DATA
+
+    // Basic approximation of color grade via CSS canvas filters
+    // TODO: Canvas2D is the degraded path — full GPU math only runs in WebGPU
+    const brightnessVal = 1 + cg.brightness
+    const contrastVal   = cg.contrast
+    const saturateVal   = cg.saturation
+    this.ctx2d.filter = `brightness(${brightnessVal}) contrast(${contrastVal}) saturate(${saturateVal})`
 
     this.ctx2d.globalAlpha = opacity
 
@@ -241,6 +303,7 @@ export class TimelineCompositor {
 
     this.ctx2d.drawImage(video, dx, dy, dw, dh)
     this.ctx2d.globalAlpha = 1
+    this.ctx2d.filter = 'none'
     return true
   }
 

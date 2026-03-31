@@ -90,7 +90,7 @@ export interface TimelineClip {
 
 /** A transformation/operation applied to a clip */
 export interface TimelineOperation {
-  type: 'cut' | 'remove_segment' | 'speed' | 'fade_in' | 'fade_out' | 'mute'
+  type: 'cut' | 'remove_segment' | 'speed' | 'fade_in' | 'fade_out' | 'mute' | 'color_grade'
   /** For cut: the time point to split at (seconds) */
   at?: number
   /** For remove_segment: start of removed range (seconds, relative to clip) */
@@ -101,6 +101,28 @@ export interface TimelineOperation {
   rate?: number
   /** For fade_in/fade_out: duration in seconds */
   duration?: number
+
+  // ── Color grade fields ──
+  /** Additive brightness adjustment (-1 to +1, default 0) */
+  brightness?: number
+  /** Contrast multiplier (0 to 3, default 1) */
+  contrast?: number
+  /** Saturation multiplier (0 to 3, default 1) */
+  saturation?: number
+  /** Exposure in EV stops (-3 to +3, default 0) */
+  exposure?: number
+  /** Color temperature shift (-1 cool to +1 warm, default 0) */
+  temperature?: number
+  /** Tint shift (-1 green to +1 magenta, default 0) */
+  tint?: number
+  /** Red channel gain (0 to 2, default 1) */
+  rGain?: number
+  /** Green channel gain (0 to 2, default 1) */
+  gGain?: number
+  /** Blue channel gain (0 to 2, default 1) */
+  bGain?: number
+  /** Name of an applied built-in profile (optional) */
+  profileName?: string
 }
 
 /** A named track containing ordered clips */
