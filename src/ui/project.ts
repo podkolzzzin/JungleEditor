@@ -98,26 +98,26 @@ export async function updateSourcePath(
   await writable.close()
 }
 
-// ── .timeline file operations ──
+// ── .timeline file operations (stored in project root, not sources/) ──
 
 export async function writeTimelineFile(
-  sourcesDir: FileSystemDirectoryHandle,
+  projectDir: FileSystemDirectoryHandle,
   timelineId: string,
   doc: TimelineDocument,
 ): Promise<void> {
   doc.modified = new Date().toISOString()
-  const fileHandle = await sourcesDir.getFileHandle(`${timelineId}.timeline`, { create: true })
+  const fileHandle = await projectDir.getFileHandle(`${timelineId}.timeline`, { create: true })
   const writable = await fileHandle.createWritable()
   await writable.write(serializeTimeline(doc))
   await writable.close()
 }
 
 export async function readTimelineFile(
-  sourcesDir: FileSystemDirectoryHandle,
+  projectDir: FileSystemDirectoryHandle,
   timelineId: string,
 ): Promise<TimelineDocument | null> {
   try {
-    const fileHandle = await sourcesDir.getFileHandle(`${timelineId}.timeline`)
+    const fileHandle = await projectDir.getFileHandle(`${timelineId}.timeline`)
     const file = await fileHandle.getFile()
     const text = await file.text()
     return parseTimeline(text)
@@ -127,11 +127,11 @@ export async function readTimelineFile(
 }
 
 export async function deleteTimelineFile(
-  sourcesDir: FileSystemDirectoryHandle,
+  projectDir: FileSystemDirectoryHandle,
   timelineId: string,
 ): Promise<void> {
   try {
-    await sourcesDir.removeEntry(`${timelineId}.timeline`)
+    await projectDir.removeEntry(`${timelineId}.timeline`)
   } catch {
     // File may not exist
   }
@@ -141,6 +141,7 @@ export async function deleteTimelineFile(
 
 export async function readAllSources(
   sourcesDir: FileSystemDirectoryHandle,
+  projectDir: FileSystemDirectoryHandle,
 ): Promise<{
   sources: SourceMetadata[]
   folders: FolderMeta[]
@@ -150,6 +151,7 @@ export async function readAllSources(
   const folders: FolderMeta[] = []
   const timelines: TimelineSourceMeta[] = []
 
+  // Read .source and .folder files from sources/ directory
   for await (const entry of sourcesDir.values()) {
     if (entry.kind !== 'file') continue
     const fileHandle = entry as FileSystemFileHandle
@@ -167,19 +169,25 @@ export async function readAllSources(
         const id = entry.name.replace('.folder', '')
         folders.push({ id, ...parsed })
       }
-    } else if (entry.name.endsWith('.timeline')) {
-      const file = await fileHandle.getFile()
-      const text = await file.text()
-      const doc = parseTimeline(text)
-      if (doc) {
-        const id = entry.name.replace('.timeline', '')
-        timelines.push({
-          id,
-          name: doc.name || entry.name,
-          path: '',
-          created: doc.created,
-        })
-      }
+    }
+  }
+
+  // Read .timeline files from project root directory
+  for await (const entry of projectDir.values()) {
+    if (entry.kind !== 'file') continue
+    if (!entry.name.endsWith('.timeline')) continue
+    const fileHandle = entry as FileSystemFileHandle
+    const file = await fileHandle.getFile()
+    const text = await file.text()
+    const doc = parseTimeline(text)
+    if (doc) {
+      const id = entry.name.replace('.timeline', '')
+      timelines.push({
+        id,
+        name: doc.name || entry.name,
+        path: '',
+        created: doc.created,
+      })
     }
   }
 
