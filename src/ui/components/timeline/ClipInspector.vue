@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TimelineClip } from '../../../core/types'
+import type { TimelineClip, TimelineOperation } from '../../../core/types'
 import { formatTimeFull, parseTimeInput } from './useTimeline'
 import { DEFAULT_COLOR_GRADE, COLOR_PROFILES } from '../../../core/color'
 import type { ColorGradeParams } from '../../../core/color'
@@ -20,7 +20,7 @@ function markDirty() {
 function addOperation(type: string) {
   if (!props.clip) return
   if (!props.clip.operations) props.clip.operations = []
-  const op: any = { type }
+  const op: TimelineOperation = { type: type as TimelineOperation['type'] }
   if (type === 'cut') op.at = 0
   if (type === 'remove_segment') { op.from = 0; op.to = 1 }
   if (type === 'speed') op.rate = 1.0
@@ -47,7 +47,7 @@ function removeOperation(index: number) {
 
 const profileNames = computed(() => Object.keys(COLOR_PROFILES))
 
-function applyProfile(op: any, profileName: string) {
+function applyProfile(op: TimelineOperation, profileName: string) {
   if (!profileName) return
   const profile: ColorGradeParams = COLOR_PROFILES[profileName]
   if (!profile) return
@@ -64,14 +64,14 @@ function applyProfile(op: any, profileName: string) {
   markDirty()
 }
 
-function onSliderChange(op: any, field: keyof ColorGradeParams, value: number) {
+function onSliderChange(op: TimelineOperation, field: keyof ColorGradeParams, value: number) {
   op[field] = value
   // Clear profile name when manually adjusting sliders
   op.profileName = undefined
   markDirty()
 }
 
-function resetColorGrade(op: any) {
+function resetColorGrade(op: TimelineOperation) {
   op.brightness   = DEFAULT_COLOR_GRADE.brightness
   op.contrast     = DEFAULT_COLOR_GRADE.contrast
   op.saturation   = DEFAULT_COLOR_GRADE.saturation
