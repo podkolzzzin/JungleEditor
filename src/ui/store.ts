@@ -610,6 +610,8 @@ export async function importPickedFiles(
     let sourceId: string
     const mimeType = file.type || 'video/mp4'
     const added = new Date().toISOString()
+    // The physical destination for copy/move is always media/
+    const copyDestPath = 'media'
 
     if (mode === 'link') {
       sourceId = crypto.randomUUID()
@@ -632,7 +634,7 @@ export async function importPickedFiles(
       saveFileHandle(sourceId, finalHandle)
     } else {
       // For copy/move: use project-relative path as stable ID (no .source file)
-      sourceId = `project:media/${file.name}`
+      sourceId = `project:${copyDestPath}/${file.name}`
     }
 
     // Create blob URL from the (possibly copied) file
@@ -650,7 +652,7 @@ export async function importPickedFiles(
       size: finalFile.size,
       mimeType,
       added,
-      path: mode === 'link' ? targetPath : 'media',
+      path: mode === 'link' ? targetPath : copyDestPath,
       permissionState: 'granted',
     }
     targetChildren.push(fileNode)
@@ -763,11 +765,14 @@ export async function addFolder(name: string, parentFolder?: FileNode): Promise<
 export async function createTimeline(name: string, parentFolder?: FileNode): Promise<void> {
   if (!projectHandle.value) return
 
-  const timelineId = name
+  // Sanitize name to be a valid filename
+  const sanitized = name.replace(/[/\\:*?"<>|]/g, '_').trim()
+  if (!sanitized) return
+  const timelineId = sanitized
   const now = new Date().toISOString()
 
   const doc: TimelineDocument = {
-    name,
+    name: sanitized,
     created: now,
     modified: now,
     resolution: '1920x1080',
@@ -787,7 +792,7 @@ export async function createTimeline(name: string, parentFolder?: FileNode): Pro
 
   const node: FileNode = {
     id: timelineId,
-    name: `${name}.timeline`,
+    name: `${sanitized}.timeline`,
     type: 'file',
     sourceId: timelineId,
     path: targetPath,

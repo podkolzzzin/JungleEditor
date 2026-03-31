@@ -182,8 +182,13 @@ export async function readAllSources(
     }
   }
 
-  // Collect names of files already tracked by .source metadata for deduplication
-  const trackedNames = new Set(sources.map((s) => s.name))
+  // Collect names of files already tracked by .source metadata for deduplication.
+  // Use full relative paths (path/name) when path is available, plus bare names as fallback.
+  const trackedNames = new Set<string>()
+  for (const s of sources) {
+    trackedNames.add(s.name)
+    if (s.path) trackedNames.add(`${s.path}/${s.name}`)
+  }
 
   // Read .timeline files from project root directory
   for await (const entry of projectDir.values()) {
@@ -216,13 +221,13 @@ export async function readAllSources(
       } else if (entry.kind === 'file') {
         // Skip timeline files (already handled above) and hidden files
         if (entry.name.endsWith('.timeline') || entry.name.startsWith('.')) continue
-        // Skip files already tracked by .source metadata
-        if (trackedNames.has(entry.name)) continue
+        // Use relative path + filename as stable ID
+        const fullRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+        // Skip files already tracked by .source metadata (check both name and full path)
+        if (trackedNames.has(entry.name) || trackedNames.has(fullRelPath)) continue
 
         const fileHandle = entry as FileSystemFileHandle
         const file = await fileHandle.getFile()
-        // Use relative path + filename as stable ID
-        const fullRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
         projectFiles.push({
           id: `project:${fullRelPath}`,
           name: entry.name,
