@@ -55,10 +55,9 @@ test.describe('Full Workflow', () => {
     })
 
     // ── 6. Create a timeline ──
-    await page.evaluate(() => {
-      window.prompt = () => 'My Test Timeline'
-    })
     await page.locator('.panel-btn[title="New Timeline"]').click()
+    await page.locator('.input-dialog-field').fill('My Test Timeline')
+    await page.locator('.input-dialog-field').press('Enter')
 
     // A timeline node should appear in the file tree
     await expect(

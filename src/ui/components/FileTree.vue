@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import type { FileNode } from '../../core/types'
 import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
+import { showInputDialog } from '../composables/useInputDialog'
 import FileTreeNode from './FileTreeNode.vue'
 
 const emit = defineEmits<{
@@ -90,17 +91,17 @@ function onAddFiles() {
   addVideoFiles(getSelectedFolder())
 }
 
-function onCreateFolder() {
-  const name = prompt('Folder name:')
-  if (name?.trim()) {
-    addFolder(name.trim(), getSelectedFolder())
+async function onCreateFolder() {
+  const name = await showInputDialog({ title: 'Folder name', placeholder: 'Enter folder name' })
+  if (name) {
+    addFolder(name, getSelectedFolder())
   }
 }
 
-function onCreateTimeline() {
-  const name = prompt('Timeline name:')
-  if (name?.trim()) {
-    createTimeline(name.trim(), getSelectedFolder())
+async function onCreateTimeline() {
+  const name = await showInputDialog({ title: 'Timeline name', placeholder: 'Enter timeline name' })
+  if (name) {
+    createTimeline(name, getSelectedFolder())
   }
 }
 </script>

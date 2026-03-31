@@ -14,10 +14,9 @@ test.describe('Timeline Zoom', () => {
     await expect(page.locator('.app-shell')).toBeVisible()
 
     // Create a timeline
-    await page.evaluate(() => {
-      window.prompt = () => 'Zoom Test'
-    })
     await page.locator('.panel-btn[title="New Timeline"]').click()
+    await page.locator('.input-dialog-field').fill('Zoom Test')
+    await page.locator('.input-dialog-field').press('Enter')
     await expect(page.locator('.timeline-editor')).toBeVisible({ timeout: 5000 })
 
     // Zoom in
