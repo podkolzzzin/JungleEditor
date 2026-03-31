@@ -837,12 +837,13 @@ export async function resolveFileUrl(node: FileNode): Promise<string | null> {
   }
 
   try {
-    const perm = await node.handle.requestPermission({ mode: 'read' })
+    const handle = node.handle as FileSystemFileHandle
+    const perm = await handle.requestPermission({ mode: 'read' })
     if (perm !== 'granted') {
       node.permissionState = 'denied'
       return null
     }
-    const file = await node.handle.getFile()
+    const file = await handle.getFile()
     const url = URL.createObjectURL(file)
     node.url = url
     node.permissionState = 'granted'

@@ -59,7 +59,11 @@ async function onSelect(mode: 'copy' | 'move' | 'link') {
 }
 
 function onClose() {
-  emit(phase.value === 'importing' ? 'cancel' : 'done')
+  if (phase.value === 'importing') {
+    emit('cancel')
+  } else {
+    emit('done')
+  }
 }
 
 const modeLabel: Record<string, string> = {

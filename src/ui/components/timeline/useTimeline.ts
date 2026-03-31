@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import type { Ref } from 'vue'
 import type { TimelineClip, TimelineTrack } from '../../../core/types'
 import {
@@ -6,14 +6,13 @@ import {
   openTabs,
   focusedPaneId,
   findPaneById,
-  getActivePaneTab,
   setTabDirty,
   saveTimelineById,
   findNode,
   sourcesDir,
 } from '../../store'
 import { getClipEffectiveDuration } from '../../../core/timeline/clip-helpers'
-import { splitClipInTrack, splitAllAtPlayhead, computeTotalDuration } from '../../../core/timeline/operations'
+import { splitAllAtPlayhead, computeTotalDuration } from '../../../core/timeline/operations'
 import { MIN_PPS, MAX_PPS, DEFAULT_PPS, DEFAULT_CLIP_DURATION } from '../../../core/timeline/constants'
 import { formatTime } from '../../../core/timeline/format'
 
@@ -354,16 +353,6 @@ export function useTimeline(paneIdRef?: Ref<string>) {
   }
 
   // ── Split clip ──
-
-  function splitClip(trackIndex: number, clipIndex: number, atSourceTime?: number) {
-    if (!doc.value) return
-    const track = doc.value.tracks[trackIndex]
-    if (!track) return
-    if (splitClipInTrack(track, clipIndex, atSourceTime)) {
-      selectedClip.value = { trackIndex, clipIndex }
-      markDirty()
-    }
-  }
 
   /** Split all clips at the global playhead position (blade cut across all tracks) */
   function splitAtPlayhead() {

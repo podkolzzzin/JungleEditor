@@ -67,7 +67,6 @@ function onTabBarDrop(e: DragEvent) {
 
   if (fromPaneId === props.pane.id) {
     // Reorder within the same pane
-    const toIdx = props.pane.tabIds.indexOf(tabId)
     const insertAt = computeDropIndex(e)
     const adjustedInsert = insertAt > fromIndex ? insertAt - 1 : insertAt
     if (adjustedInsert !== fromIndex) {

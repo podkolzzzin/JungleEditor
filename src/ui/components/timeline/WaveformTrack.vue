@@ -5,9 +5,8 @@
  * extracted via Web Audio API's OfflineAudioContext.decodeAudioData().
  */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import type { TimelineClip } from '../../types'
+import type { TimelineClip } from '../../../core/types'
 import { findNode, resolveFileUrl } from '../../store'
-import { getClipEffectiveDuration } from './compositor'
 
 const props = defineProps<{
   clips: TimelineClip[]
@@ -97,7 +96,6 @@ function drawWaveform(canvas: HTMLCanvasElement, peaks: Float32Array, clip: Time
   ctx.scale(dpr, dpr)
   ctx.clearRect(0, 0, cssWidth, cssHeight)
 
-  const effectiveDuration = getClipEffectiveDuration(clip)
   const samplesPerSecond = 200
   const startSample = Math.floor(clip.in * samplesPerSecond)
   const endSample = Math.floor(clip.out * samplesPerSecond)

@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import type { FileNode } from '../../core/types'
 import type { PendingImport } from '../store'
-import { fileTree, addVideoFiles, pickVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
+import { fileTree, pickVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
 import { showInputDialog } from '../composables/useInputDialog'
 import FileTreeNode from './FileTreeNode.vue'
 
