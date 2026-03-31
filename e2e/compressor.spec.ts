@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { setupFSMock, enqueueTestVideo, createProject } from './helpers'
+import { setupFSMock, enqueueTestVideo, createProject, addVideoFile } from './helpers'
 
 test.describe('Compressor', () => {
   test.beforeEach(async ({ page }) => {
@@ -14,11 +14,7 @@ test.describe('Compressor', () => {
     await expect(page.locator('.app-shell')).toBeVisible()
 
     // Add a video file
-    await enqueueTestVideo(page, 'test-video.mp4')
-    await page.locator('.panel-btn[title="Add Video Files"]').click()
-    await expect(page.locator('.tree-item .label', { hasText: 'test-video.mp4' })).toBeVisible({
-      timeout: 5000,
-    })
+    await addVideoFile(page, 'test-video.mp4')
 
     // Right-click the video file in the file tree
     const fileItem = page.locator('.tree-item', { has: page.locator('.label', { hasText: 'test-video.mp4' }) })

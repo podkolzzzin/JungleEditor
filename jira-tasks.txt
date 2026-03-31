@@ -11,6 +11,12 @@ Done:
 - Show sound waveform
 - Make panels resizable
 - Drag n drop for timelines reordering
+- Fix file link
+- Feature use file/move/copy
+- timeline: real file, not fake in source
+- modal for timeline name
+- ability to increase track volume to more than 100%
+- implement tab & doc system
 
 Backlog:
 # Timeline epic

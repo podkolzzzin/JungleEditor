@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { setupFSMock, enqueueTestVideo, enqueueDirectoryPicker, createProject } from './helpers'
+import { setupFSMock, enqueueTestVideo, enqueueDirectoryPicker, createProject, addVideoFile } from './helpers'
 
 test.describe('Full Workflow', () => {
   test.beforeEach(async ({ page }) => {
@@ -31,20 +31,10 @@ test.describe('Full Workflow', () => {
     await expect(page.locator('.panel-title')).toHaveText('EXPLORER')
 
     // ── 3. Add a video file ──
-    await enqueueTestVideo(page, 'test-video.mp4')
-    await page.locator('.panel-btn[title="Add Video Files"]').click()
-
-    // The file should appear in the file tree
-    await expect(page.locator('.tree-item .label', { hasText: 'test-video.mp4' })).toBeVisible({
-      timeout: 5000,
-    })
+    await addVideoFile(page, 'test-video.mp4')
 
     // ── 4. Add a second video file (to test multiple files) ──
-    await enqueueTestVideo(page, 'interview.mp4')
-    await page.locator('.panel-btn[title="Add Video Files"]').click()
-    await expect(page.locator('.tree-item .label', { hasText: 'interview.mp4' })).toBeVisible({
-      timeout: 5000,
-    })
+    await addVideoFile(page, 'interview.mp4')
 
     // ── 5. Click a video file to preview it ──
     await page.locator('.tree-item .label', { hasText: 'test-video.mp4' }).click()

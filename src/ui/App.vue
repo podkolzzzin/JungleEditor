@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { sidebarOpen, hasProject, projectName, loading, initFromStorage, paneLayout } from './store'
 import type { FileNode } from '../core/types'
+import type { PendingImport } from './store'
 import ActivityBar from './components/ActivityBar.vue'
 import FileTree from './components/FileTree.vue'
 import BackgroundTasks from './components/BackgroundTasks.vue'
@@ -10,10 +11,26 @@ import LandingScreen from './components/LandingScreen.vue'
 import ResizeHandle from './components/ResizeHandle.vue'
 import EditorLayout from './components/EditorLayout.vue'
 import CompressorDialog from './components/CompressorDialog.vue'
+import ImportModeDialog from './components/ImportModeDialog.vue'
 import InputDialog from './components/InputDialog.vue'
 
 const activePanel = ref('explorer')
 const sidebarWidth = ref(260)
+
+// ── Import-mode dialog ──
+const pendingImport = ref<PendingImport | null>(null)
+
+function onPendingImport(pending: PendingImport) {
+  pendingImport.value = pending
+}
+
+function onImportDone() {
+  pendingImport.value = null
+}
+
+function onImportCancel() {
+  pendingImport.value = null
+}
 
 // ── Compressor dialog ──
 const compressorNode = ref<FileNode | null>(null)
@@ -68,8 +85,12 @@ onMounted(() => {
       <ActivityBar :active="activePanel" @select="onActivitySelect" />
 
       <div class="sidebar" v-show="sidebarOpen" :style="{ width: sidebarWidth + 'px' }">
+<<<<<<< copilot/add-video-rendering-export-pipeline
         <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" />
         <BackgroundTasks v-else-if="activePanel === 'tasks'" />
+=======
+        <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" @pending-import="onPendingImport" />
+>>>>>>> main
       </div>
 
       <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />
@@ -87,6 +108,14 @@ onMounted(() => {
       :node="compressorNode"
       @close="onCompressorClose"
       @done="onCompressorDone"
+    />
+
+    <!-- Import mode dialog (modal overlay) -->
+    <ImportModeDialog
+      v-if="pendingImport"
+      :pending="pendingImport"
+      @done="onImportDone"
+      @cancel="onImportCancel"
     />
 
     <!-- VS Code-style input dialog -->

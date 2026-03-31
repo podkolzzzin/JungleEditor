@@ -146,7 +146,6 @@ function onColorGradeSlider(op: any, field: string, value: number) {
             <template v-else-if="op.type === 'color_grade'">
             </template>
             <button class="op-remove" @click="removeOperation(oi)">×</button>
-          </div>
           <!-- Color grade expanded panel (shown below the badge row) -->
           <div v-if="op.type === 'color_grade'" class="cg-panel">
             <div class="cg-profile-row">
@@ -205,6 +204,7 @@ function onColorGradeSlider(op: any, field: string, value: number) {
               <input type="range" class="cg-slider cg-slider-b" min="0" max="2" step="0.01" :value="op.bGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
               <input type="number" class="insp-input mini mono cg-num" min="0" max="2" step="0.01" :value="op.bGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
             </div>
+          </div>
           </div>
         </div>
         <div v-else class="insp-ops-empty">No operations</div>

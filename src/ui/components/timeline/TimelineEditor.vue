@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, toRef } from 'vue'
+import { ref, toRef } from 'vue'
 import { useTimeline } from './useTimeline'
 import TimelinePlayer from './TimelinePlayer.vue'
 import ClipInspector from './ClipInspector.vue'
@@ -22,7 +22,7 @@ function onInspectorResize(delta: number) {
 const {
   activeFile,
   doc,
-  dirty,
+  dirty: _dirty,
   selectedClip,
   globalPlayhead,
   isPlaying,

@@ -111,8 +111,10 @@ export class TimelineCompositor {
   // Canvas2D fallback
   private ctx2d: CanvasRenderingContext2D | null = null
   private _useWebGPU = false
+  private _initialized = false
 
   get useWebGPU() { return this._useWebGPU }
+  get initialized() { return this._initialized }
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
     try {
@@ -153,7 +155,10 @@ export class TimelineCompositor {
 
       const shaderModule = this.device.createShaderModule({ code: SHADER_CODE })
 
-      this.pipeline = this.device.createRenderPipeline({
+      // Use async pipeline creation to avoid blocking the main thread
+      // during shader compilation (the color-grade shader is complex enough
+      // to cause a noticeable stall with the synchronous variant).
+      this.pipeline = await this.device.createRenderPipelineAsync({
         layout: this.device.createPipelineLayout({
           bindGroupLayouts: [this.bindGroupLayout],
         }),
@@ -166,11 +171,13 @@ export class TimelineCompositor {
       })
 
       this._useWebGPU = true
+      this._initialized = true
       console.log('[Compositor] WebGPU initialized')
     } catch (e) {
       console.warn('[Compositor] WebGPU unavailable, using Canvas2D fallback:', e)
       this.ctx2d = canvas.getContext('2d')
       this._useWebGPU = false
+      this._initialized = true
     }
   }
 
@@ -300,6 +307,7 @@ export class TimelineCompositor {
   }
 
   destroy(): void {
+    this._initialized = false
     this.device?.destroy()
     this.device = null
     this.context = null
