@@ -8,6 +8,7 @@ import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import type { TimelineDocument } from '../../../core/types'
 import { findNode, resolveFileUrl } from '../../store'
 import { TimelineCompositor, findActiveClip } from './compositor'
+import { DEFAULT_COLOR_GRADE } from '../../../core/color'
 import { formatTimeFull } from './useTimeline'
 
 const props = defineProps<{
@@ -239,7 +240,8 @@ function renderCurrentFrame() {
 
   // Render frame — retry if the video frame isn't ready yet
   if (video.readyState >= 2) {
-    const ok = compositor.renderFrame(video, info.opacity)
+    const colorGrade = info.colorGrade ?? DEFAULT_COLOR_GRADE
+    const ok = compositor.renderFrame(video, info.opacity, colorGrade)
     if (!ok) {
       scheduleRetry()
     }

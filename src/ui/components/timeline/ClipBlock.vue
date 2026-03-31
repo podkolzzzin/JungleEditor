@@ -168,6 +168,7 @@ function color() {
 .clip-op-dot.speed { background: #e5c07b; }
 .clip-op-dot.fade_in, .clip-op-dot.fade_out { background: #98c379; }
 .clip-op-dot.mute { background: #c678dd; }
+.clip-op-dot.color_grade { background: #61afef; }
 
 .clip-remove {
   position: absolute;
