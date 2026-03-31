@@ -212,6 +212,16 @@ test.describe('JungleEditor E2E', () => {
     const clipVisible = await clipBlock.first().isVisible().catch(() => false)
     if (clipVisible) {
       await expect(clipBlock.first()).toBeVisible()
+
+      // ── 9b. Verify waveform subtrack appears ──
+      const waveformSubtrack = page.locator('[data-testid="waveform-subtrack"]')
+      await expect(waveformSubtrack.first()).toBeVisible({ timeout: 5000 })
+
+      // ── 9c. Verify track volume slider ──
+      const volumeSlider = page.locator('[data-testid="track-volume-slider"]').first()
+      await expect(volumeSlider).toBeVisible()
+      // Volume should default to 100%
+      await expect(volumeSlider).toHaveValue('1')
     }
 
     // ── 10. Interact with the timeline: zoom ──
@@ -361,5 +371,104 @@ test.describe('JungleEditor E2E', () => {
     // Reset
     await label.click()
     await expect(label).toHaveText('100%')
+  })
+
+  test('waveform subtrack and track volume controls', async ({ page }) => {
+    test.setTimeout(60_000)
+    await page.goto('/')
+
+    // Create project
+    await enqueueDirectoryPicker(page)
+    await page.getByText('Create Project').click()
+    await expect(page.locator('.app-shell')).toBeVisible()
+
+    // Add a video file
+    await enqueueTestVideo(page, 'test-video.mp4')
+    await page.locator('.panel-btn[title="Add Video Files"]').click()
+    await expect(page.locator('.tree-item .label', { hasText: 'test-video.mp4' })).toBeVisible({
+      timeout: 5000,
+    })
+
+    // Create a timeline
+    await page.evaluate(() => {
+      window.prompt = () => 'Waveform Test'
+    })
+    await page.locator('.panel-btn[title="New Timeline"]').click()
+    await expect(page.locator('.timeline-editor')).toBeVisible({ timeout: 5000 })
+
+    // Get sourceId for test video
+    const sourceId = await page.evaluate(async () => {
+      const mock = (window as any).__fsMock
+      const root = mock.projectRoot
+      const sourcesDir = root.children.get('sources')
+      if (!sourcesDir) return null
+      for (const [name, child] of sourcesDir.children) {
+        if (name.endsWith('.source') && child.kind === 'file') {
+          const text = new TextDecoder().decode(child.data)
+          const idMatch = text.match(/^id=(.+)$/m)
+          const nameMatch = text.match(/^name=(.+)$/m)
+          if (idMatch && nameMatch && nameMatch[1] === 'test-video.mp4') {
+            return idMatch[1]
+          }
+        }
+      }
+      return null
+    })
+    expect(sourceId).toBeTruthy()
+
+    // Inject a clip into Track 1
+    await page.evaluate(async (sid) => {
+      try {
+        const store = await import('/src/store.ts')
+        if (store.activeTimeline && store.activeTimeline.value) {
+          const doc = store.activeTimeline.value
+          if (doc.tracks.length > 0) {
+            doc.tracks[0].clips.push({
+              sourceId: sid,
+              sourceName: 'test-video.mp4',
+              in: 0,
+              out: 5,
+              offset: 0,
+              operations: [],
+            })
+          }
+        }
+      } catch (e) {
+        console.error('Failed to import store:', e)
+      }
+    }, sourceId)
+    await page.waitForTimeout(500)
+
+    // ── Verify waveform subtrack is displayed ──
+    const waveformSubtrack = page.locator('[data-testid="waveform-subtrack"]')
+    await expect(waveformSubtrack.first()).toBeVisible({ timeout: 5000 })
+
+    // Waveform canvas should exist inside the subtrack
+    const waveformCanvas = waveformSubtrack.locator('canvas').first()
+    await expect(waveformCanvas).toBeVisible()
+
+    // ── Verify track volume slider ──
+    const volumeSlider = page.locator('[data-testid="track-volume-slider"]').first()
+    await expect(volumeSlider).toBeVisible()
+    // Default volume should be 1 (100%)
+    await expect(volumeSlider).toHaveValue('1')
+
+    // ── Change volume to 50% ──
+    await volumeSlider.fill('0.5')
+    await page.waitForTimeout(300)
+
+    // Verify volume value display updates
+    const volumeLabel = page.locator('.track-volume-value').first()
+    await expect(volumeLabel).toHaveText('50%')
+
+    // ── Set volume to 0 (mute) ──
+    await volumeSlider.fill('0')
+    await page.waitForTimeout(200)
+    await expect(volumeLabel).toHaveText('0%')
+
+    // ── Restore volume to 80% ──
+    await volumeSlider.fill('0.8')
+    await page.waitForTimeout(200)
+    await expect(volumeLabel).toHaveText('80%')
   })
 })

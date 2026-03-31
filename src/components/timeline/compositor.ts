@@ -57,6 +57,8 @@ export interface ActiveClipInfo {
   speed: number
   /** Whether audio should be muted */
   muted: boolean
+  /** Track-level volume (0–1, default 1) */
+  trackVolume: number
 }
 
 /**
@@ -79,7 +81,8 @@ export function findActiveClip(
         const sourceTime = clip.in + localTime * speed
         const opacity = computeClipOpacity(clip, localTime)
         const muted = isClipMuted(clip)
-        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted }
+        const trackVolume = track.volume ?? 1
+        return { clip, trackIndex: ti, clipIndex: ci, sourceTime, localTime, opacity, speed, muted, trackVolume }
       }
     }
   }
