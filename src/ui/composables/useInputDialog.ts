@@ -12,6 +12,12 @@ export function showInputDialog(opts: {
   placeholder?: string
   value?: string
 }): Promise<string | null> {
+  // Reject any pending dialog before opening a new one
+  if (resolvePromise) {
+    resolvePromise(null)
+    resolvePromise = null
+  }
+
   inputDialogTitle.value = opts.title
   inputDialogPlaceholder.value = opts.placeholder ?? ''
   inputDialogValue.value = opts.value ?? ''

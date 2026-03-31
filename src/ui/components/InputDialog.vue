@@ -25,17 +25,11 @@ function onConfirm() {
     confirmInputDialog(v)
   }
 }
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    cancelInputDialog()
-  }
-}
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="inputDialogVisible" class="input-dialog-overlay" @click.self="cancelInputDialog" @keydown="onKeydown">
+    <div v-if="inputDialogVisible" class="input-dialog-overlay" @click.self="cancelInputDialog">
       <div class="input-dialog" role="dialog" aria-modal="true" :aria-label="inputDialogTitle">
         <div class="input-dialog-title">{{ inputDialogTitle }}</div>
         <input
