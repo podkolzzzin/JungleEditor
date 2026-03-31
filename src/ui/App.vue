@@ -85,12 +85,8 @@ onMounted(() => {
       <ActivityBar :active="activePanel" @select="onActivitySelect" />
 
       <div class="sidebar" v-show="sidebarOpen" :style="{ width: sidebarWidth + 'px' }">
-<<<<<<< copilot/add-video-rendering-export-pipeline
-        <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" />
-        <BackgroundTasks v-else-if="activePanel === 'tasks'" />
-=======
         <FileTree v-if="activePanel === 'explorer'" @compress="onCompress" @pending-import="onPendingImport" />
->>>>>>> main
+        <BackgroundTasks v-else-if="activePanel === 'tasks'" />
       </div>
 
       <ResizeHandle v-show="sidebarOpen" direction="horizontal" @resize="onSidebarResize" />
