@@ -128,7 +128,7 @@ export interface TimelineOperation {
 export interface TimelineTrack {
   name: string
   clips: TimelineClip[]
-  /** Track volume level (0–1). Defaults to 1.0 when undefined. */
+  /** Track volume level (0+). Defaults to 1.0 when undefined. Values above 1 amplify. */
   volume?: number
 }
 
