@@ -162,10 +162,116 @@ export interface CompressProgress {
   etaSeconds: number
 }
 
+// ── Render types ──
+
+/** Resolution preset for rendering */
+export interface ResolutionPreset {
+  label: string
+  width: number
+  height: number
+}
+
+/** Standard resolution presets */
+export const RESOLUTION_PRESETS: ResolutionPreset[] = [
+  { label: '720p', width: 1280, height: 720 },
+  { label: '1080p', width: 1920, height: 1080 },
+  { label: '1440p', width: 2560, height: 1440 },
+  { label: '4K', width: 3840, height: 2160 },
+]
+
+/** Render profile — codec/quality/resolution settings for rendering */
+export interface RenderProfile {
+  name: string
+  container: 'mp4' | 'webm'
+  videoCodec: string
+  resolution: { width: number; height: number; label: string }
+  fps: number
+  qualityPreset: 'low' | 'medium' | 'high' | 'lossless'
+  includeAudio: boolean
+  audioBitrate: number
+}
+
+/** Render document stored in .render files */
+export interface RenderDocument {
+  name: string
+  timelineId: string
+  timelineName: string
+  profile: RenderProfile
+  created: string
+  modified: string
+}
+
+/** Generic background task status */
+export type BackgroundTaskStatus = 'queued' | 'running' | 'paused' | 'complete' | 'failed'
+
+/** Generic background task */
+export interface BackgroundTask {
+  id: string
+  type: string
+  label: string
+  status: BackgroundTaskStatus
+  /** Progress 0–1 */
+  progress: number
+  startedAt?: string
+  completedAt?: string
+  error?: string
+  canPause: boolean
+  canCancel: boolean
+}
+
+/** Render-specific background task */
+export interface RenderTask extends BackgroundTask {
+  type: 'render'
+  renderJobId: string
+  timelineName: string
+  profileName: string
+  currentSegment: number
+  totalSegments: number
+  estimatedRemaining?: number
+}
+
+/** Status of a single render segment */
+export type RenderSegmentStatus = 'pending' | 'rendering' | 'complete' | 'failed'
+
+/** Metadata for a single render segment */
+export interface RenderSegmentMeta {
+  index: number
+  startTime: number
+  endTime: number
+  duration: number
+  fingerprint: string
+  status: RenderSegmentStatus
+  framesRendered: number
+  totalFrames: number
+  fileSize?: number
+  opfsPath: string
+}
+
+/** Status of an entire render job */
+export type RenderJobStatus = 'pending' | 'running' | 'paused' | 'complete' | 'failed' | 'cancelled'
+
+/** Persistent render job metadata (stored in IndexedDB) */
+export interface RenderJob {
+  id: string
+  timelineName: string
+  status: RenderJobStatus
+  profile: RenderProfile
+  timelineSnapshot: TimelineDocument
+  segments: RenderSegmentMeta[]
+  progress: number
+  createdAt: string
+  updatedAt: string
+}
+
 // ── Utility: check if a file node is a timeline ──
 
 export function isTimelineNode(node: FileNode): boolean {
   return node.mimeType === 'application/x-timeline' || node.name.endsWith('.timeline')
+}
+
+/** Check if a file node is a render profile */
+export function isRenderNode(node: FileNode): boolean {
+  return node.mimeType === 'application/x-render' || node.name.endsWith('.render')
 }
 
 // ── Utility: find a node by ID in a tree ──

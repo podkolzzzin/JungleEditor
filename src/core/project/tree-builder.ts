@@ -5,6 +5,16 @@
 
 import type { FileNode, SourceMetadata, TimelineSourceMeta, FolderMeta } from '../types'
 
+/** Metadata stored alongside a render profile in sources/ for tree placement */
+export interface RenderSourceMeta {
+  id: string
+  name: string
+  timelineId: string
+  timelineName: string
+  path: string
+  created: string
+}
+
 /**
  * Build a hierarchical FileNode tree from flat lists of sources, folders, and timelines.
  * The handleMap provides platform-specific file handles (keyed by sourceId).
@@ -14,6 +24,7 @@ export function buildTreeFromSources(
   folders: FolderMeta[],
   handleMap: Map<string, unknown>,
   timelines: TimelineSourceMeta[] = [],
+  renders: RenderSourceMeta[] = [],
 ): FileNode[] {
   const root: FileNode[] = []
 
@@ -110,6 +121,22 @@ export function buildTreeFromSources(
       permissionState: 'granted',
     }
     parent.push(timelineNode)
+  }
+
+  // Place render profile files in the tree (nested under their parent timeline)
+  for (const rd of renders) {
+    const parent = ensureFolderPath(rd.path)
+    const renderNode: FileNode = {
+      id: rd.id,
+      name: `${rd.name}.render`,
+      type: 'file',
+      sourceId: rd.id,
+      path: rd.path,
+      mimeType: 'application/x-render',
+      added: rd.created,
+      permissionState: 'granted',
+    }
+    parent.push(renderNode)
   }
 
   // Sort: folders first, then files, alphabetically

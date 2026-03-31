@@ -4,4 +4,5 @@
 
 export { serializeSource, parseSource, serializeFolder, parseFolder } from './source-format'
 export { serializeTimeline, parseTimeline } from './timeline-format'
+export { serializeRender, parseRender } from './render-format'
 export { buildTreeFromSources } from './tree-builder'
