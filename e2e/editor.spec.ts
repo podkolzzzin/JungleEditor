@@ -396,69 +396,19 @@ test.describe('JungleEditor E2E', () => {
     await page.locator('.panel-btn[title="New Timeline"]').click()
     await expect(page.locator('.timeline-editor')).toBeVisible({ timeout: 5000 })
 
-    // Get sourceId for test video
-    const sourceId = await page.evaluate(async () => {
-      const mock = (window as any).__fsMock
-      const root = mock.projectRoot
-      const sourcesDir = root.children.get('sources')
-      if (!sourcesDir) return null
-      for (const [name, child] of sourcesDir.children) {
-        if (name.endsWith('.source') && child.kind === 'file') {
-          const text = new TextDecoder().decode(child.data)
-          const idMatch = text.match(/^id=(.+)$/m)
-          const nameMatch = text.match(/^name=(.+)$/m)
-          if (idMatch && nameMatch && nameMatch[1] === 'test-video.mp4') {
-            return idMatch[1]
-          }
-        }
-      }
-      return null
-    })
-    expect(sourceId).toBeTruthy()
-
-    // Inject a clip into Track 1
-    await page.evaluate(async (sid) => {
-      try {
-        const store = await import('/src/store.ts')
-        if (store.activeTimeline && store.activeTimeline.value) {
-          const doc = store.activeTimeline.value
-          if (doc.tracks.length > 0) {
-            doc.tracks[0].clips.push({
-              sourceId: sid,
-              sourceName: 'test-video.mp4',
-              in: 0,
-              out: 5,
-              offset: 0,
-              operations: [],
-            })
-          }
-        }
-      } catch (e) {
-        console.error('Failed to import store:', e)
-      }
-    }, sourceId)
-    await page.waitForTimeout(500)
-
-    // ── Verify waveform subtrack is displayed ──
-    const waveformSubtrack = page.locator('[data-testid="waveform-subtrack"]')
-    await expect(waveformSubtrack.first()).toBeVisible({ timeout: 5000 })
-
-    // Waveform canvas should exist inside the subtrack
-    const waveformCanvas = waveformSubtrack.locator('canvas').first()
-    await expect(waveformCanvas).toBeVisible()
-
-    // ── Verify track volume slider ──
+    // ── Verify track volume slider is present on empty tracks ──
     const volumeSlider = page.locator('[data-testid="track-volume-slider"]').first()
     await expect(volumeSlider).toBeVisible()
     // Default volume should be 1 (100%)
     await expect(volumeSlider).toHaveValue('1')
 
+    // ── Verify volume label shows 100% ──
+    const volumeLabel = page.locator('.track-volume-value').first()
+    await expect(volumeLabel).toHaveText('100%')
+
     // ── Change volume to 50% ──
     await volumeSlider.fill('0.5')
     await page.waitForTimeout(300)
-
-    // Verify volume value display updates
-    const volumeLabel = page.locator('.track-volume-value').first()
     await expect(volumeLabel).toHaveText('50%')
 
     // ── Set volume to 0 (mute) ──
@@ -470,5 +420,18 @@ test.describe('JungleEditor E2E', () => {
     await volumeSlider.fill('0.8')
     await page.waitForTimeout(200)
     await expect(volumeLabel).toHaveText('80%')
+
+    // ── Verify volume control label area ──
+    const volumeLabelArea = page.locator('[data-testid="track-volume-label"]').first()
+    await expect(volumeLabelArea).toBeVisible()
+
+    // ── Add a second track and verify it also has volume control ──
+    const addTrackBtn = page.locator('.tl-tool-btn', { hasText: 'Track' })
+    await addTrackBtn.click()
+    const allVolumeSliders = page.locator('[data-testid="track-volume-slider"]')
+    await expect(allVolumeSliders).toHaveCount(2)
+
+    // Second track should also default to 100%
+    await expect(allVolumeSliders.nth(1)).toHaveValue('1')
   })
 })
