@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { TimelineClip, TimelineOperation } from '../../../core/types'
+import type { TimelineClip } from '../../../core/types'
+import { COLOR_PROFILES, DEFAULT_COLOR_GRADE } from '../../../core/color'
 import { formatTimeFull, parseTimeInput } from './useTimeline'
-import { DEFAULT_COLOR_GRADE, COLOR_PROFILES } from '../../../core/color'
-import type { ColorGradeParams } from '../../../core/color'
 
 const props = defineProps<{
   clip: TimelineClip | null
@@ -20,21 +18,21 @@ function markDirty() {
 function addOperation(type: string) {
   if (!props.clip) return
   if (!props.clip.operations) props.clip.operations = []
-  const op: TimelineOperation = { type: type as TimelineOperation['type'] }
+  const op: any = { type }
   if (type === 'cut') op.at = 0
   if (type === 'remove_segment') { op.from = 0; op.to = 1 }
   if (type === 'speed') op.rate = 1.0
   if (type === 'fade_in' || type === 'fade_out') op.duration = 1.0
   if (type === 'color_grade') {
-    op.brightness  = DEFAULT_COLOR_GRADE.brightness
-    op.contrast    = DEFAULT_COLOR_GRADE.contrast
-    op.saturation  = DEFAULT_COLOR_GRADE.saturation
-    op.exposure    = DEFAULT_COLOR_GRADE.exposure
+    op.brightness = DEFAULT_COLOR_GRADE.brightness
+    op.contrast = DEFAULT_COLOR_GRADE.contrast
+    op.saturation = DEFAULT_COLOR_GRADE.saturation
+    op.exposure = DEFAULT_COLOR_GRADE.exposure
     op.temperature = DEFAULT_COLOR_GRADE.temperature
-    op.tint        = DEFAULT_COLOR_GRADE.tint
-    op.rGain       = DEFAULT_COLOR_GRADE.rGain
-    op.gGain       = DEFAULT_COLOR_GRADE.gGain
-    op.bGain       = DEFAULT_COLOR_GRADE.bGain
+    op.tint = DEFAULT_COLOR_GRADE.tint
+    op.rGain = DEFAULT_COLOR_GRADE.rGain
+    op.gGain = DEFAULT_COLOR_GRADE.gGain
+    op.bGain = DEFAULT_COLOR_GRADE.bGain
   }
   props.clip.operations.push(op)
   markDirty()
@@ -45,43 +43,25 @@ function removeOperation(index: number) {
   markDirty()
 }
 
-const profileNames = computed(() => Object.keys(COLOR_PROFILES))
+const profileNames = Object.keys(COLOR_PROFILES)
 
-function applyProfile(op: TimelineOperation, profileName: string) {
-  if (!profileName) return
-  const profile: ColorGradeParams = COLOR_PROFILES[profileName]
+function applyProfile(op: any, name: string) {
+  if (!name) return
+  const profile = COLOR_PROFILES[name]
   if (!profile) return
-  op.profileName  = profileName
-  op.brightness   = profile.brightness
-  op.contrast     = profile.contrast
-  op.saturation   = profile.saturation
-  op.exposure     = profile.exposure
-  op.temperature  = profile.temperature
-  op.tint         = profile.tint
-  op.rGain        = profile.rGain
-  op.gGain        = profile.gGain
-  op.bGain        = profile.bGain
+  Object.assign(op, { profileName: name, ...profile })
   markDirty()
 }
 
-function onSliderChange(op: TimelineOperation, field: keyof ColorGradeParams, value: number) {
+function resetColorGrade(op: any) {
+  Object.assign(op, { profileName: undefined, ...DEFAULT_COLOR_GRADE })
+  markDirty()
+}
+
+function onColorGradeSlider(op: any, field: string, value: number) {
   op[field] = value
-  // Clear profile name when manually adjusting sliders
+  // Clear profileName if user manually adjusts a slider
   op.profileName = undefined
-  markDirty()
-}
-
-function resetColorGrade(op: TimelineOperation) {
-  op.brightness   = DEFAULT_COLOR_GRADE.brightness
-  op.contrast     = DEFAULT_COLOR_GRADE.contrast
-  op.saturation   = DEFAULT_COLOR_GRADE.saturation
-  op.exposure     = DEFAULT_COLOR_GRADE.exposure
-  op.temperature  = DEFAULT_COLOR_GRADE.temperature
-  op.tint         = DEFAULT_COLOR_GRADE.tint
-  op.rGain        = DEFAULT_COLOR_GRADE.rGain
-  op.gGain        = DEFAULT_COLOR_GRADE.gGain
-  op.bGain        = DEFAULT_COLOR_GRADE.bGain
-  op.profileName  = undefined
   markDirty()
 }
 </script>
@@ -148,123 +128,82 @@ function resetColorGrade(op: TimelineOperation) {
           </div>
         </div>
         <div v-if="clip.operations?.length" class="insp-ops-list">
-          <div v-for="(op, oi) in clip.operations" :key="oi" class="insp-op-wrapper">
-            <div class="insp-op">
-              <span class="op-badge" :class="op.type">{{ op.type.replace(/_/g, ' ') }}</span>
-              <template v-if="op.type === 'cut'">
-                <input class="insp-input mini mono" :value="formatTimeFull(op.at ?? 0)" @change="(e: Event) => { op.at = parseTimeInput((e.target as HTMLInputElement).value); markDirty() }" />
-              </template>
-              <template v-else-if="op.type === 'remove_segment'">
-                <input class="insp-input mini mono" placeholder="from" :value="formatTimeFull(op.from ?? 0)" @change="(e: Event) => { op.from = parseTimeInput((e.target as HTMLInputElement).value); markDirty() }" />
-                <input class="insp-input mini mono" placeholder="to" :value="formatTimeFull(op.to ?? 0)" @change="(e: Event) => { op.to = parseTimeInput((e.target as HTMLInputElement).value); markDirty() }" />
-              </template>
-              <template v-else-if="op.type === 'speed'">
-                <input class="insp-input mini mono" type="number" step="0.1" min="0.1" :value="op.rate ?? 1" @input="(e: Event) => { op.rate = Number((e.target as HTMLInputElement).value); markDirty() }" />
-              </template>
-              <template v-else-if="op.type === 'fade_in' || op.type === 'fade_out'">
-                <input class="insp-input mini mono" type="number" step="0.1" min="0" :value="op.duration ?? 1" @input="(e: Event) => { op.duration = Number((e.target as HTMLInputElement).value); markDirty() }" />
-              </template>
-              <button class="op-remove" @click="removeOperation(oi)">×</button>
+          <div v-for="(op, oi) in clip.operations" :key="oi" class="insp-op">
+            <span class="op-badge" :class="op.type">{{ op.type.replace('_', ' ') }}</span>
+            <template v-if="op.type === 'cut'">
+              <input class="insp-input mini mono" :value="formatTimeFull(op.at ?? 0)" @change="(e: Event) => { op.at = parseTimeInput((e.target as HTMLInputElement).value); markDirty() }" />
+            </template>
+            <template v-else-if="op.type === 'remove_segment'">
+              <input class="insp-input mini mono" placeholder="from" :value="formatTimeFull(op.from ?? 0)" @change="(e: Event) => { op.from = parseTimeInput((e.target as HTMLInputElement).value); markDirty() }" />
+              <input class="insp-input mini mono" placeholder="to" :value="formatTimeFull(op.to ?? 0)" @change="(e: Event) => { op.to = parseTimeInput((e.target as HTMLInputElement).value); markDirty() }" />
+            </template>
+            <template v-else-if="op.type === 'speed'">
+              <input class="insp-input mini mono" type="number" step="0.1" min="0.1" :value="op.rate ?? 1" @input="(e: Event) => { op.rate = Number((e.target as HTMLInputElement).value); markDirty() }" />
+            </template>
+            <template v-else-if="op.type === 'fade_in' || op.type === 'fade_out'">
+              <input class="insp-input mini mono" type="number" step="0.1" min="0" :value="op.duration ?? 1" @input="(e: Event) => { op.duration = Number((e.target as HTMLInputElement).value); markDirty() }" />
+            </template>
+            <template v-else-if="op.type === 'color_grade'">
+            </template>
+            <button class="op-remove" @click="removeOperation(oi)">×</button>
+          </div>
+          <!-- Color grade expanded panel (shown below the badge row) -->
+          <div v-if="op.type === 'color_grade'" class="cg-panel">
+            <div class="cg-profile-row">
+              <select
+                class="insp-op-select cg-profile-select"
+                :value="op.profileName ?? ''"
+                @change="(e: Event) => applyProfile(op, (e.target as HTMLSelectElement).value)"
+              >
+                <option value="">Custom</option>
+                <option v-for="name in profileNames" :key="name" :value="name">{{ name }}</option>
+              </select>
+              <button class="cg-reset-btn" @click="resetColorGrade(op)" title="Reset to defaults">Reset</button>
             </div>
-
-            <!-- Color grade expanded panel -->
-            <div v-if="op.type === 'color_grade'" class="cg-panel">
-              <!-- Profile selector -->
-              <div class="cg-profile-row">
-                <select
-                  class="cg-profile-select"
-                  :value="op.profileName ?? ''"
-                  @change="(e: Event) => applyProfile(op, (e.target as HTMLSelectElement).value)"
-                >
-                  <option value="">Custom</option>
-                  <option v-for="name in profileNames" :key="name" :value="name">{{ name }}</option>
-                </select>
-                <button class="cg-reset-btn" @click="resetColorGrade(op)" title="Reset to defaults">Reset</button>
-              </div>
-              <!-- Sliders -->
-              <div class="cg-sliders">
-                <div class="cg-row">
-                  <label class="cg-label">Exposure</label>
-                  <input type="range" class="cg-slider" min="-3" max="3" step="0.05"
-                    :value="op.exposure ?? 0"
-                    @input="(e: Event) => onSliderChange(op, 'exposure', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="-3" max="3" step="0.05"
-                    :value="(op.exposure ?? 0).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'exposure', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Temp</label>
-                  <input type="range" class="cg-slider" min="-1" max="1" step="0.01"
-                    :value="op.temperature ?? 0"
-                    @input="(e: Event) => onSliderChange(op, 'temperature', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="-1" max="1" step="0.01"
-                    :value="(op.temperature ?? 0).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'temperature', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Tint</label>
-                  <input type="range" class="cg-slider" min="-1" max="1" step="0.01"
-                    :value="op.tint ?? 0"
-                    @input="(e: Event) => onSliderChange(op, 'tint', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="-1" max="1" step="0.01"
-                    :value="(op.tint ?? 0).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'tint', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Brightness</label>
-                  <input type="range" class="cg-slider" min="-1" max="1" step="0.01"
-                    :value="op.brightness ?? 0"
-                    @input="(e: Event) => onSliderChange(op, 'brightness', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="-1" max="1" step="0.01"
-                    :value="(op.brightness ?? 0).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'brightness', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Contrast</label>
-                  <input type="range" class="cg-slider" min="0" max="3" step="0.01"
-                    :value="op.contrast ?? 1"
-                    @input="(e: Event) => onSliderChange(op, 'contrast', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="0" max="3" step="0.01"
-                    :value="(op.contrast ?? 1).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'contrast', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Saturation</label>
-                  <input type="range" class="cg-slider" min="0" max="3" step="0.01"
-                    :value="op.saturation ?? 1"
-                    @input="(e: Event) => onSliderChange(op, 'saturation', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="0" max="3" step="0.01"
-                    :value="(op.saturation ?? 1).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'saturation', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Red</label>
-                  <input type="range" class="cg-slider cg-slider-r" min="0" max="2" step="0.01"
-                    :value="op.rGain ?? 1"
-                    @input="(e: Event) => onSliderChange(op, 'rGain', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="0" max="2" step="0.01"
-                    :value="(op.rGain ?? 1).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'rGain', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Green</label>
-                  <input type="range" class="cg-slider cg-slider-g" min="0" max="2" step="0.01"
-                    :value="op.gGain ?? 1"
-                    @input="(e: Event) => onSliderChange(op, 'gGain', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="0" max="2" step="0.01"
-                    :value="(op.gGain ?? 1).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'gGain', Number((e.target as HTMLInputElement).value))" />
-                </div>
-                <div class="cg-row">
-                  <label class="cg-label">Blue</label>
-                  <input type="range" class="cg-slider cg-slider-b" min="0" max="2" step="0.01"
-                    :value="op.bGain ?? 1"
-                    @input="(e: Event) => onSliderChange(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
-                  <input type="number" class="cg-num insp-input mini mono" min="0" max="2" step="0.01"
-                    :value="(op.bGain ?? 1).toFixed(2)"
-                    @input="(e: Event) => onSliderChange(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
-                </div>
-              </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Exposure (EV)</label>
+              <input type="range" class="cg-slider" min="-3" max="3" step="0.05" :value="op.exposure ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'exposure', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="-3" max="3" step="0.05" :value="op.exposure ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'exposure', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Temp</label>
+              <input type="range" class="cg-slider" min="-1" max="1" step="0.01" :value="op.temperature ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'temperature', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="-1" max="1" step="0.01" :value="op.temperature ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'temperature', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Tint</label>
+              <input type="range" class="cg-slider" min="-1" max="1" step="0.01" :value="op.tint ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'tint', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="-1" max="1" step="0.01" :value="op.tint ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'tint', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Brightness</label>
+              <input type="range" class="cg-slider" min="-1" max="1" step="0.01" :value="op.brightness ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'brightness', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="-1" max="1" step="0.01" :value="op.brightness ?? 0" @input="(e: Event) => onColorGradeSlider(op, 'brightness', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Contrast</label>
+              <input type="range" class="cg-slider" min="0" max="3" step="0.01" :value="op.contrast ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'contrast', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="3" step="0.01" :value="op.contrast ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'contrast', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Saturation</label>
+              <input type="range" class="cg-slider" min="0" max="3" step="0.01" :value="op.saturation ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'saturation', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="3" step="0.01" :value="op.saturation ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'saturation', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Red</label>
+              <input type="range" class="cg-slider cg-slider-r" min="0" max="2" step="0.01" :value="op.rGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'rGain', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="2" step="0.01" :value="op.rGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'rGain', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Green</label>
+              <input type="range" class="cg-slider cg-slider-g" min="0" max="2" step="0.01" :value="op.gGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'gGain', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="2" step="0.01" :value="op.gGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'gGain', Number((e.target as HTMLInputElement).value))" />
+            </div>
+            <div class="cg-slider-row">
+              <label class="cg-label">Blue</label>
+              <input type="range" class="cg-slider cg-slider-b" min="0" max="2" step="0.01" :value="op.bGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
+              <input type="number" class="insp-input mini mono cg-num" min="0" max="2" step="0.01" :value="op.bGain ?? 1" @input="(e: Event) => onColorGradeSlider(op, 'bGain', Number((e.target as HTMLInputElement).value))" />
             </div>
           </div>
         </div>
@@ -386,11 +325,6 @@ function resetColorGrade(op: TimelineOperation) {
   flex-direction: column;
   gap: 5px;
 }
-.insp-op-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
 .insp-op {
   display: flex;
   align-items: center;
@@ -427,34 +361,25 @@ function resetColorGrade(op: TimelineOperation) {
 
 /* ── Color grade panel ── */
 .cg-panel {
-  background: rgba(97,175,239,0.05);
-  border: 1px solid rgba(97,175,239,0.15);
-  border-radius: 4px;
-  padding: 8px;
   margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(97,175,239,0.06);
+  border: 1px solid rgba(97,175,239,0.2);
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .cg-profile-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 4px;
 }
 .cg-profile-select {
   flex: 1;
-  background: var(--sidebar-bg);
-  border: 1px solid var(--border-color);
-  color: var(--sidebar-fg);
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-family: var(--sans);
-  cursor: pointer;
   min-width: 0;
 }
-.cg-profile-select:focus { outline: none; border-color: var(--accent-color); }
-.cg-profile-select option { background: var(--sidebar-bg); color: var(--sidebar-fg); }
 .cg-reset-btn {
   background: none;
   border: 1px solid var(--border-color);
@@ -464,26 +389,22 @@ function resetColorGrade(op: TimelineOperation) {
   font-size: 10px;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
 }
-.cg-reset-btn:hover { border-color: var(--accent-color); color: var(--sidebar-fg); }
-.cg-sliders {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.cg-reset-btn:hover {
+  color: var(--sidebar-fg);
+  border-color: var(--accent-color);
 }
-.cg-row {
+.cg-slider-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 .cg-label {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  font-size: 10px;
   color: var(--sidebar-fg-dim);
-  width: 60px;
+  width: 66px;
   flex-shrink: 0;
+  text-align: right;
 }
 .cg-slider {
   flex: 1;
@@ -514,14 +435,15 @@ function resetColorGrade(op: TimelineOperation) {
   border: none;
 }
 .cg-slider-r::-webkit-slider-thumb { background: #e06c75; }
-.cg-slider-r::-moz-range-thumb     { background: #e06c75; }
+.cg-slider-r::-moz-range-thumb { background: #e06c75; }
 .cg-slider-g::-webkit-slider-thumb { background: #98c379; }
-.cg-slider-g::-moz-range-thumb     { background: #98c379; }
+.cg-slider-g::-moz-range-thumb { background: #98c379; }
 .cg-slider-b::-webkit-slider-thumb { background: #61afef; }
-.cg-slider-b::-moz-range-thumb     { background: #61afef; }
+.cg-slider-b::-moz-range-thumb { background: #61afef; }
 .cg-num {
   width: 52px !important;
+  padding: 1px 4px !important;
+  font-size: 10px !important;
   flex-shrink: 0;
-  text-align: right;
 }
 </style>

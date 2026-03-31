@@ -1,38 +1,32 @@
 /**
- * Clip color-grade helpers — reads color_grade operations from a clip.
- * Pure function, no browser or Vue dependencies.
+ * Color grading helpers for timeline clips.
+ * Pure functions — no browser or Vue dependencies.
  */
 
 import type { TimelineClip } from '../types'
-import { DEFAULT_COLOR_GRADE, COLOR_PROFILES } from './color-profiles'
-import type { ColorGradeParams } from './color-profiles'
+import { COLOR_PROFILES, DEFAULT_COLOR_GRADE, type ColorGradeParams } from './color-profiles'
 
 /**
- * Resolve the effective color grade for a clip.
- * Reads the first `color_grade` operation, resolves any named profile,
- * and merges with defaults. Returns `DEFAULT_COLOR_GRADE` when no
- * color_grade operation is present.
+ * Read the color grade parameters for a clip.
+ * Reads the first `color_grade` operation, resolves `profileName` if set,
+ * merges with DEFAULT_COLOR_GRADE defaults, and returns the result.
  */
 export function getClipColorGrade(clip: TimelineClip): ColorGradeParams {
   const op = clip.operations?.find(o => o.type === 'color_grade')
   if (!op) return DEFAULT_COLOR_GRADE
 
-  // Start with defaults, then apply profile (if named), then operation's own fields
-  const base: ColorGradeParams = op.profileName && COLOR_PROFILES[op.profileName]
-    ? { ...COLOR_PROFILES[op.profileName] }
-    : { ...DEFAULT_COLOR_GRADE }
+  // If a profile is selected, use it as the base (then allow per-field overrides below)
+  const profileBase = op.profileName ? (COLOR_PROFILES[op.profileName] ?? DEFAULT_COLOR_GRADE) : DEFAULT_COLOR_GRADE
 
-  // Individual field overrides written directly on the operation take precedence
-  // only when the field is explicitly set (not undefined).
   return {
-    brightness:  op.brightness  !== undefined ? op.brightness  : base.brightness,
-    contrast:    op.contrast    !== undefined ? op.contrast    : base.contrast,
-    saturation:  op.saturation  !== undefined ? op.saturation  : base.saturation,
-    exposure:    op.exposure    !== undefined ? op.exposure    : base.exposure,
-    temperature: op.temperature !== undefined ? op.temperature : base.temperature,
-    tint:        op.tint        !== undefined ? op.tint        : base.tint,
-    rGain:       op.rGain       !== undefined ? op.rGain       : base.rGain,
-    gGain:       op.gGain       !== undefined ? op.gGain       : base.gGain,
-    bGain:       op.bGain       !== undefined ? op.bGain       : base.bGain,
+    brightness:  op.brightness  !== undefined ? op.brightness  : profileBase.brightness,
+    contrast:    op.contrast    !== undefined ? op.contrast    : profileBase.contrast,
+    saturation:  op.saturation  !== undefined ? op.saturation  : profileBase.saturation,
+    exposure:    op.exposure    !== undefined ? op.exposure    : profileBase.exposure,
+    temperature: op.temperature !== undefined ? op.temperature : profileBase.temperature,
+    tint:        op.tint        !== undefined ? op.tint        : profileBase.tint,
+    rGain:       op.rGain       !== undefined ? op.rGain       : profileBase.rGain,
+    gGain:       op.gGain       !== undefined ? op.gGain       : profileBase.gGain,
+    bGain:       op.bGain       !== undefined ? op.bGain       : profileBase.bGain,
   }
 }

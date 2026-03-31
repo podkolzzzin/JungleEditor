@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { FileNode } from '../../core/types'
 import { fileTree, addVideoFiles, addFolder, closeProject, getSelectedFolder, relinkAllFiles, unlinkedCount, createTimeline } from '../store'
 import FileTreeNode from './FileTreeNode.vue'
+
+const emit = defineEmits<{
+  compress: [node: FileNode]
+}>()
 
 const isDragging = ref(false)
 
@@ -137,7 +142,7 @@ function onCreateTimeline() {
       @dragover.prevent="onDragOver"
       @dragleave="onDragLeave"
     >
-      <FileTreeNode v-if="fileTree.length" :nodes="fileTree" />
+      <FileTreeNode v-if="fileTree.length" :nodes="fileTree" @compress="emit('compress', $event)" />
 
       <div v-else class="empty-state" @click="onAddFiles">
         <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">

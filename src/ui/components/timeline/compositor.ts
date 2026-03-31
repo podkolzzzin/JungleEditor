@@ -26,15 +26,15 @@ struct Params {
   opacity:     f32,
   brightness:  f32,
   contrast:    f32,
-  saturation:  f32,   // 16 bytes
+  saturation:  f32,  // 16 bytes — vec4 aligned
   exposure:    f32,
   temperature: f32,
   tint:        f32,
-  _pad1:       f32,   // 32 bytes
+  _pad1:       f32,  // 32 bytes
   rGain:       f32,
   gGain:       f32,
   bGain:       f32,
-  _pad2:       f32,   // 48 bytes
+  _pad2:       f32,  // 48 bytes
 }
 
 @group(0) @binding(0) var mySampler: sampler;
@@ -69,10 +69,13 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
   // 1. Exposure (EV stops)
   c *= pow(2.0, params.exposure);
 
-  // 2. Temperature & tint (simplified: shift blue<->yellow, green<->magenta)
+  // 2. Temperature & tint (simplified linear shift in RGB space:
+  //    temperature shifts blue<->yellow axis; tint shifts green<->magenta axis.
+  //    ±0.1 per unit gives a visible but not extreme shift at ±1.)
   c.r += params.temperature * 0.1;
   c.b -= params.temperature * 0.1;
   c.g += params.tint * 0.1;
+  // Magenta push reduces both r and b slightly to compensate green increase
   c.r -= params.tint * 0.05;
   c.b -= params.tint * 0.05;
 
@@ -136,7 +139,7 @@ export class TimelineCompositor {
       })
 
       this.paramsBuffer = this.device.createBuffer({
-        size: 48, // 12 floats × 4 bytes — full color grade params
+        size: 48, // 12 floats × 4 bytes
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       })
 
@@ -206,23 +209,12 @@ export class TimelineCompositor {
         !this.sampler || !this.paramsBuffer || !this.bindGroupLayout) return false
 
     try {
-      // Write all 12 floats: opacity, brightness, contrast, saturation, exposure,
-      // temperature, tint, pad, rGain, gGain, bGain, pad
       this.device.queue.writeBuffer(
         this.paramsBuffer, 0,
         new Float32Array([
-          opacity,
-          cg.brightness,
-          cg.contrast,
-          cg.saturation,
-          cg.exposure,
-          cg.temperature,
-          cg.tint,
-          0,            // _pad1
-          cg.rGain,
-          cg.gGain,
-          cg.bGain,
-          0,            // _pad2
+          opacity, cg.brightness, cg.contrast, cg.saturation,
+          cg.exposure, cg.temperature, cg.tint, 0,
+          cg.rGain, cg.gGain, cg.bGain, 0,
         ]),
       )
 
@@ -283,11 +275,11 @@ export class TimelineCompositor {
 
     if (video.readyState < 2) return false // HAVE_CURRENT_DATA
 
-    // Basic approximation of color grade via CSS canvas filters
-    // TODO: Canvas2D is the degraded path — full GPU math only runs in WebGPU
+    // Apply basic color approximation via CSS filter (Canvas2D degraded path)
     const brightnessVal = 1 + cg.brightness
-    const contrastVal   = cg.contrast
-    const saturateVal   = cg.saturation
+    const contrastVal = cg.contrast
+    const saturateVal = cg.saturation
+    // TODO: exposure, temperature, tint, RGB gains are not approximated in Canvas2D fallback
     this.ctx2d.filter = `brightness(${brightnessVal}) contrast(${contrastVal}) saturate(${saturateVal})`
 
     this.ctx2d.globalAlpha = opacity

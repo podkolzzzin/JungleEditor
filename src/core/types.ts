@@ -101,8 +101,7 @@ export interface TimelineOperation {
   rate?: number
   /** For fade_in/fade_out: duration in seconds */
   duration?: number
-
-  // ── Color grade fields ──
+  // ── Color grade fields (for type: 'color_grade') ──
   /** Additive brightness adjustment (-1 to +1, default 0) */
   brightness?: number
   /** Contrast multiplier (0 to 3, default 1) */
@@ -121,7 +120,7 @@ export interface TimelineOperation {
   gGain?: number
   /** Blue channel gain (0 to 2, default 1) */
   bGain?: number
-  /** Name of an applied built-in profile (optional) */
+  /** Name of an applied built-in color profile (optional) */
   profileName?: string
 }
 
@@ -141,6 +140,26 @@ export interface TimelineDocument {
   resolution?: string
   fps?: number
   tracks: TimelineTrack[]
+}
+
+// ── Compressor types ──
+
+export interface CompressSettings {
+  codec: 'avc1.640028' | 'vp09.00.10.08' | 'av01.0.04M.08'
+  container: 'mp4' | 'webm'
+  videoBitrate: number      // bps, e.g. 4_000_000
+  audioBitrate: number      // bps, e.g. 128_000
+  scaleWidth?: number       // optional output width (maintains aspect ratio)
+  scaleHeight?: number
+  framerate?: number        // optional fps override
+}
+
+export type CompressStatus = 'idle' | 'checking' | 'encoding' | 'done' | 'error' | 'cancelled'
+
+export interface CompressProgress {
+  percent: number
+  fps: number
+  etaSeconds: number
 }
 
 // ── Utility: check if a file node is a timeline ──
